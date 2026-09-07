@@ -76,16 +76,17 @@ felts (4 Words, counting the canonical-ABI result pointer when present). Two *di
 govern that boundary, and conflating them is the actual pitfall:
 
 - **`MAX_FLAT_PARAMS = 16`** — a **count** of canonical-ABI flat values.
-- **`MAX_DIRECT_STACK_FELTS = 16`** — a **felt budget**, measured after `u64` values expand to two
-  felts each and any result pointer is added.
+- **`MAX_DIRECT_STACK_FELTS = 16`** — the **felt budget for a direct wrapper call**, after parameter
+  widths expand and any canonical-ABI output pointer is included.
 
 Both live in `compiler:sdk/v0.14.0-rc.1:frontend/wasm/src/component/types/mod.rs:44-62`, whose own
 doc comment spells out the distinction: the felt budget "is a Miden VM constraint, distinct from the
 spec's count-based `MAX_FLAT_PARAMS`: a signature can stay within 16 flat values while 64-bit values
 expand it past 16 stack felts."
 
-Exceeding **either** limit makes canonical-ABI flattening replace the whole parameter list with a
-single pointer to a tuple in linear memory — `flat_params_need_tuple` is an **OR**
+For the parameter list itself, canonical-ABI flattening replaces all parameters with one tuple
+pointer when either the flat-parameter count or the flattened **parameter** width exceeds 16 —
+`flat_params_need_tuple` is an **OR**
 (`compiler:sdk/v0.14.0-rc.1:frontend/wasm/src/component/flat.rs:212-217,263-270`):
 
 ```rust
@@ -94,7 +95,11 @@ flat_params.len() > MAX_FLAT_PARAMS
         > MAX_DIRECT_STACK_FELTS
 ```
 
-What happens to that pointer is where the two sides of the boundary part ways.
+Result handling happens after this parameter-only decision. For an import with indirect results,
+flattening appends the result pointer to the parameter list afterward
+(`compiler:sdk/v0.14.0-rc.1:frontend/wasm/src/component/flat.rs:272-288`).
+
+What happens to the parameter-tuple pointer is where the two sides of the boundary part ways.
 
 ### FPI imports: the count decides the path, the felt budget can still reject it
 
@@ -106,17 +111,21 @@ from the flat-value **count alone**
 let has_arg_ptr = flattened_params.len() > MAX_FLAT_PARAMS;
 ```
 
-So the two disagree in exactly one band — **count ≤ 16 but felts > 16**. Flattening *has* tupled
-such a signature, but `plan_fpi_call` still believes it is a direct call, so it takes the
-`!has_arg_ptr` path, sums the operand felts, and rejects:
+So the two parameter classifiers disagree in exactly one band — **count ≤ 16 but parameter felts >
+16**. Flattening *has* tupled such a signature, but `plan_fpi_call` still believes it is a direct
+call, so it takes the `!has_arg_ptr` path, sums the operand felts, and rejects:
 
 ```
 FPI import `{path}` lowers to {n} operand stack felts after expanding 64-bit
 values and result pointers, but direct FPI calls support at most 16
 ```
 
-The source says this check is deliberately ordered first, because "over-budget direct shapes are
-tupled by canonical ABI flattening, which would otherwise surface as a confusing shape mismatch."
+An output pointer exposes a separate direct-call edge case: exactly 16 parameter felts do not trigger
+parameter tupling, but appending the output pointer makes the direct stack total 17 felts, so
+`plan_fpi_call` rejects it without an argument tuple.
+
+For the parameter-width mismatch, this check runs before lowered-signature comparison so the caller
+gets the width diagnostic instead of a confusing tuple/direct shape mismatch.
 
 ```rust
 // REJECTED — 13 flat values, so the count-based `has_arg_ptr` is false, but six
