@@ -99,7 +99,7 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-miden = "0.14.0-rc.1"
+miden = "0.14.0"
 ```
 
 Contracts build on the pinned nightly toolchain (`channel = "nightly-2026-04-30"`, `targets = ["wasm32-wasip2"]`); the compiler's MSRV is 1.97.
@@ -284,12 +284,11 @@ To call another component's methods from a note or tx script, declare the depend
 miden-core = "*"
 miden-protocol = "*"
 basic-wallet = { path = "../basic-wallet" }
-
-[package.metadata.miden.dependencies]
-basic-wallet = { wit = "../basic-wallet/target/generated-wit/" }
 ```
 
-The `[dependencies]` entry is required. The `[package.metadata.miden.dependencies].<name>.wit` key is an **override**: without it the macro searches `<dep-root>`, `<dep-root>/wit`, and `<dep-root>/target/generated-wit` in turn. It becomes mandatory only when the dependency entry points at a `.masp` file rather than a directory. Every cross-component example at the pinned SDK version sets it explicitly, so the two-section form above is the shape to copy.
+The `[dependencies]` entry is all you need. A component's WIT is embedded in its compiled package, and the embedded copy is authoritative.
+
+Do **not** add a `[package.metadata.miden.dependencies].<name>.wit` key for such a dependency: when a package embeds WIT and the manifest also sets `wit`, expansion fails with *"embeds component WIT, but miden-project.toml also sets ... remove the `wit` key"* (`sdk/base-macros/src/dependency_package.rs`). The key survives only as a fallback for dependency packages that do **not** embed WIT, for example ones produced by another toolchain. No cross-component example in the compiler ships it.
 
 Then expose the dependency's methods on the consuming account by declaring an `#[account(package::Interface)]` wrapper (e.g. `#[account(basic_wallet::BasicWallet)] pub struct Wallet;`) and calling methods on the injected `account` parameter. The package name is the dependency's Rust-style name (`-` replaced with `_`) and `Interface` is its exported WIT interface in UpperCamelCase.
 
@@ -376,12 +375,12 @@ Note side (`examples/p2id-note/src/lib.rs`): the note declares `#[account(basic_
 - [ ] Every externally-callable trait method carries `#[account_procedure]`, on the **trait**, not the impl
 - [ ] `#[account_procedure]` and `#[auth_script]` are not combined in one component
 - [ ] The `#[account(...)]` wrapper struct name differs from every generated trait name
-- [ ] `edition = "2024"` and `crate-type = ["cdylib"]` in `Cargo.toml`, with the exact pre-release pin `miden = "0.14.0-rc.1"`
+- [ ] `edition = "2024"` and `crate-type = ["cdylib"]` in `Cargo.toml`, with the exact pre-release pin `miden = "0.14.0"`
 - [ ] `[lib]` in `miden-project.toml` has `kind` (`account-component` / `note` / `tx-script`), `namespace`, **and `path`**
 - [ ] `[dependencies]` in `miden-project.toml` carries `miden-core = "*"` and `miden-protocol = "*"`
 - [ ] Typed storage uses `StorageValue<T>` / `StorageMap<K, V>` with `get()` / `set()`; slot names derive from `<package>::<namespace-interface>::<field>`
 - [ ] Notes/tx-scripts that call a component declare an `#[account(package::Interface)]` wrapper and call methods on the injected `account`
-- [ ] Cross-component deps declared in `miden-project.toml` (never `Cargo.toml`) under `[dependencies]`, with the `[package.metadata.miden.dependencies]` `wit` entry when the generated WIT is not on the default search path
+- [ ] Cross-component deps declared in `miden-project.toml` (never `Cargo.toml`) under `[dependencies]`, with no `[package.metadata.miden.dependencies]` `wit` key: embedded WIT is authoritative and a leftover key is an error
 - [ ] `incr_nonce()` is called only from an authentication procedure; `output_note::create` and the vault operations only from account-component context
 - [ ] Felt arithmetic validated before subtraction (see rust-sdk-pitfalls skill)
 - [ ] Felt comparisons use `.as_canonical_u64()` (see rust-sdk-pitfalls skill)
