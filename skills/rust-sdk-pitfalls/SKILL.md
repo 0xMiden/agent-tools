@@ -5,9 +5,9 @@ description: Critical pitfalls and safety rules for Miden Rust SDK development. 
 
 # Miden SDK Pitfalls
 
-Verified against contract SDK `miden` 0.14.0-rc.1 / compiler + `cargo-miden` 0.10.0-rc.1
-(`0xMiden/compiler` tag `sdk/v0.14.0-rc.1`), protocol + `miden-standards` + `miden-testing`
-0.16.0-rc.6, `miden-client` 0.16.0-rc.2, and Miden VM 0.29.1.
+Verified against contract SDK `miden` 0.14.0 / compiler + `cargo-miden` 0.10.0
+(`0xMiden/compiler` tag `sdk/v0.14.0`), protocol + `miden-standards` + `miden-testing`
+0.16.0-rc.9, `miden-client` 0.16.0-rc.5, and Miden VM 0.29.1.
 
 ## P1: Felt Arithmetic is Modular (SECURITY CRITICAL)
 
@@ -79,7 +79,7 @@ govern that boundary, and conflating them is the actual pitfall:
 - **`MAX_DIRECT_STACK_FELTS = 16`** — the **felt budget for a direct wrapper call**, after parameter
   widths expand and any canonical-ABI output pointer is included.
 
-Both live in `compiler:sdk/v0.14.0-rc.1:frontend/wasm/src/component/types/mod.rs:44-62`, whose own
+Both live in `compiler:sdk/v0.14.0:frontend/wasm/src/component/types/mod.rs:44-62`, whose own
 doc comment spells out the distinction: the felt budget "is a Miden VM constraint, distinct from the
 spec's count-based `MAX_FLAT_PARAMS`: a signature can stay within 16 flat values while 64-bit values
 expand it past 16 stack felts."
@@ -87,7 +87,7 @@ expand it past 16 stack felts."
 For the parameter list itself, canonical-ABI flattening replaces all parameters with one tuple
 pointer when either the flat-parameter count or the flattened **parameter** width exceeds 16 —
 `flat_params_need_tuple` is an **OR**
-(`compiler:sdk/v0.14.0-rc.1:frontend/wasm/src/component/flat.rs:212-217,263-270`):
+(`compiler:sdk/v0.14.0:frontend/wasm/src/component/flat.rs:212-217,263-270`):
 
 ```rust
 flat_params.len() > MAX_FLAT_PARAMS
@@ -97,7 +97,7 @@ flat_params.len() > MAX_FLAT_PARAMS
 
 Result handling happens after this parameter-only decision. For an import with indirect results,
 flattening appends the result pointer to the parameter list afterward
-(`compiler:sdk/v0.14.0-rc.1:frontend/wasm/src/component/flat.rs:272-288`).
+(`compiler:sdk/v0.14.0:frontend/wasm/src/component/flat.rs:272-288`).
 
 What happens to the parameter-tuple pointer is where the two sides of the boundary part ways.
 
@@ -105,7 +105,7 @@ What happens to the parameter-tuple pointer is where the two sides of the bounda
 
 The critical subtlety: `plan_fpi_call` does **not** reuse the OR above. It re-derives the call shape
 from the flat-value **count alone**
-(`compiler:sdk/v0.14.0-rc.1:frontend/wasm/src/component/lower_imports.rs:330-351`):
+(`compiler:sdk/v0.14.0:frontend/wasm/src/component/lower_imports.rs:330-351`):
 
 ```rust
 let has_arg_ptr = flattened_params.len() > MAX_FLAT_PARAMS;
@@ -136,19 +136,19 @@ fn echo_six_u64_record(&self, input: SixU64Record) -> SixU64Record;
 ```
 
 That is the compiler's own negative test,
-`compiler:sdk/v0.14.0-rc.1:tests/integration-network/src/mockchain/fpi/note/six_u64_struct.rs:5-13`
+`compiler:sdk/v0.14.0:tests/integration-network/src/mockchain/fpi/note/six_u64_struct.rs:5-13`
 (`#[should_panic(expected = "direct FPI calls support at most 16")]`).
 
 **Above 16 flat values the indirect path is supported** — `has_arg_ptr` is true, the felt-budget
 check is skipped entirely, and the wrapper reloads the tuple so the backend still sees a direct,
 felt-only call
-(`compiler:sdk/v0.14.0-rc.1:frontend/wasm/src/component/lower_imports.rs:439-508`). A
+(`compiler:sdk/v0.14.0:frontend/wasm/src/component/lower_imports.rs:439-508`). A
 22-flat-parameter FPI import is a **passing** test
-(`compiler:sdk/v0.14.0-rc.1:tests/integration-network/src/mockchain/fpi/note/sixteen_flattened_params_struct.rs`).
+(`compiler:sdk/v0.14.0:tests/integration-network/src/mockchain/fpi/note/sixteen_flattened_params_struct.rs`).
 
 **Indirect is not unbounded, though.** The FPI executor imposes its own caps, checked after the
-shape is settled (`compiler:sdk/v0.14.0-rc.1:frontend/wasm/src/component/lower_imports.rs:381-399`),
-with values from `ExecFpi` (`compiler:sdk/v0.14.0-rc.1:dialects/hir/src/ops/invoke.rs:160-169`):
+shape is settled (`compiler:sdk/v0.14.0:frontend/wasm/src/component/lower_imports.rs:381-399`),
+with values from `ExecFpi` (`compiler:sdk/v0.14.0:dialects/hir/src/ops/invoke.rs:160-169`):
 
 | bound | value | diagnostic |
 | --- | --- | --- |
@@ -169,7 +169,7 @@ storage key, a note index, a commitment) and let the callee load the rest itself
 
 On the export side the tuple pointer is produced the same way but then refused, so **either** an
 over-16 flat-value count **or** an over-16 felt budget fails
-(`compiler:sdk/v0.14.0-rc.1:frontend/wasm/src/component/lift_exports.rs:68-74`):
+(`compiler:sdk/v0.14.0:frontend/wasm/src/component/lift_exports.rs:68-74`):
 
 ```
 component export lifting for '{path}' is not yet implemented for passing the
@@ -191,13 +191,13 @@ fn process(batch_commitment: Word) { ... }
 
 Export **return** values are capped separately, at 16 loaded *values* (a count, with no felt-budget
 check at all — a record of nine `u64` fields is 9 values but 18 felts and is not caught):
-`compiler:sdk/v0.14.0-rc.1:frontend/wasm/src/component/lift_exports.rs:281-286`.
+`compiler:sdk/v0.14.0:frontend/wasm/src/component/lift_exports.rs:281-286`.
 
 ### Unrelated, but adjacent
 
 `&T` parameters are refused before any of this, by the `#[component]` macro rather than the
 compiler frontend: `references are not supported in component interfaces or exported types`
-(`compiler:sdk/v0.14.0-rc.1:sdk/base-macros/src/types.rs:102-106`). It applies to exported method
+(`compiler:sdk/v0.14.0:sdk/base-macros/src/types.rs:102-106`). It applies to exported method
 parameters, return types, and exported struct/enum fields alike — `&self` receivers are fine.
 
 ## P4: Storage API Is Typed, and a Component Is Three Parts
@@ -291,11 +291,11 @@ requires a `miden-project.toml` next to the crate's `Cargo.toml`: storage slot n
 `[lib].namespace` interface segment. ``
 
 **Caveat (toolchain-version dependent)**: this naming is a property of the Rust SDK contract macros
-in the `miden-base-macros` crate, which ships at `0.14.0-rc.1` alongside `miden`, `miden-base`,
-`miden-base-sys`, `miden-stdlib-sys` and `miden-sdk-alloc` (all `0.14.0-rc.1`). The separate
-compiler / `midenc` / `cargo-miden` workspace is `0.10.0-rc.1`. Neither is the protocol/network
-version: protocol, `miden-standards` and `miden-testing` are `0.16.0-rc.6`, `miden-client` is
-`0.16.0-rc.2`, and the VM crates are `0.29.1`. See P20 for the full version matrix and the
+in the `miden-base-macros` crate, which ships at `0.14.0` alongside `miden`, `miden-base`,
+`miden-base-sys`, `miden-stdlib-sys` and `miden-sdk-alloc` (all `0.14.0`). The separate
+compiler / `midenc` / `cargo-miden` workspace is `0.10.0`. Neither is the protocol/network
+version: protocol, `miden-standards` and `miden-testing` are `0.16.0-rc.9`, `miden-client` is
+`0.16.0-rc.5`, and the VM crates are `0.29.1`. See P20 for the full version matrix and the
 toolchain skew. Verify slot names against your installed toolchain rather than assuming a protocol
 version.
 
@@ -313,9 +313,9 @@ All contract code must be `#![no_std]`. Forgetting this or using std types cause
 ```
 
 Both lines appear before any code in the SDK examples — see
-`compiler:sdk/v0.14.0-rc.1:examples/counter-contract/src/lib.rs`,
-`compiler:sdk/v0.14.0-rc.1:examples/basic-wallet/src/lib.rs` and
-`compiler:sdk/v0.14.0-rc.1:examples/p2id-note/src/lib.rs`. Most of them lead with an explanatory
+`compiler:sdk/v0.14.0:examples/counter-contract/src/lib.rs`,
+`compiler:sdk/v0.14.0:examples/basic-wallet/src/lib.rs` and
+`compiler:sdk/v0.14.0:examples/p2id-note/src/lib.rs`. Most of them lead with an explanatory
 `// Do not link against libstd ...` comment first, so match the two attributes, not the first line.
 
 **For heap allocation (Vec, String, Box):**
@@ -325,7 +325,7 @@ use alloc::vec::Vec;
 ```
 
 **Toolchain**: contract crates pin nightly `2026-04-30` with target `wasm32-wasip2` (see
-`compiler:sdk/v0.14.0-rc.1:examples/counter-contract/rust-toolchain.toml`); the compiler/SDK MSRV is
+`compiler:sdk/v0.14.0:examples/counter-contract/rust-toolchain.toml`); the compiler/SDK MSRV is
 1.97. `Cargo.toml` needs `edition = "2024"` and `crate-type = ["cdylib"]`.
 
 ## P7: Rust SDK `Asset` Is Two Words (ID + Value)
@@ -441,7 +441,7 @@ Named enum variants (`NoteType::Private`, `NoteType::Public`) don't exist in con
 
 **Note-type encoding**: the note type is 1-bit — `Private = 0` (the protocol default) and `Public = 1`. Only these two values exist; there is no `Encrypted` type. The SDK wrapper does no validation, so an out-of-range value (e.g. `felt!(2)` or `felt!(3)`) is not caught at compile time — the kernel rejects it at execution time with `ERR_NOTE_INVALID_TYPE` (the output-note builder does `u32assert.err=ERR_NOTE_INVALID_TYPE u32lte.NOTE_TYPE_PUBLIC`).
 
-For a working conversion site, see `compiler:sdk/v0.14.0-rc.1:examples/basic-wallet-tx-script/src/lib.rs`,
+For a working conversion site, see `compiler:sdk/v0.14.0:examples/basic-wallet-tx-script/src/lib.rs`,
 which turns a raw input felt into a note type with `note_type.into()` before calling the wallet's
 `create_note`.
 
@@ -458,7 +458,7 @@ must call an account component method, which then calls `native_account::add_ass
 The pattern, split across two pinned examples:
 
 ```rust
-// Note side — compiler:sdk/v0.14.0-rc.1:examples/p2id-note/src/lib.rs
+// Note side — compiler:sdk/v0.14.0:examples/p2id-note/src/lib.rs
 #[account(basic_wallet::BasicWallet)]
 pub struct Wallet;
 
@@ -472,7 +472,7 @@ impl P2idNote {
     }
 }
 
-// Component side — compiler:sdk/v0.14.0-rc.1:examples/basic-wallet/src/lib.rs
+// Component side — compiler:sdk/v0.14.0:examples/basic-wallet/src/lib.rs
 #[component]
 trait BasicWallet {
     #[account_procedure]
@@ -492,7 +492,7 @@ auto-implemented on the `#[component_storage]` struct; the free functions
 `native_account::add_asset(asset)` / `native_account::remove_asset(asset)` are equivalent.
 
 The alternative to an `#[account(..)]` wrapper is the generated-bindings free-function form, used by
-`compiler:sdk/v0.14.0-rc.1:examples/counter-note/src/lib.rs`:
+`compiler:sdk/v0.14.0:examples/counter-note/src/lib.rs`:
 
 ```rust
 use crate::bindings::miden::counter_contract::counter_contract;
@@ -509,9 +509,9 @@ A `#[note]` struct **with fields** is auto-decoded from that storage: the macro 
 `TryFrom<&[Felt]>` that decodes each field via `FromFeltRepr` and then calls `ensure_eof()`, so
 extra trailing felts are a decode failure (`FeltReprError::TrailingData`), not ignored padding. A
 zero-sized `#[note]` struct skips `get_storage()` entirely. Manual slicing is still available —
-`compiler:sdk/v0.14.0-rc.1:examples/p2ide-note/src/lib.rs` reads `active_note::get_storage()`
+`compiler:sdk/v0.14.0:examples/p2ide-note/src/lib.rs` reads `active_note::get_storage()`
 directly and asserts `inputs.len() == 4` — but the typed form in
-`compiler:sdk/v0.14.0-rc.1:examples/p2id-note/src/lib.rs` (`#[note] struct P2idNote {
+`compiler:sdk/v0.14.0:examples/p2id-note/src/lib.rs` (`#[note] struct P2idNote {
 target_account_id: AccountId }`) is the shape to prefer.
 
 ## P13: Externally-Callable Methods Must Be Marked `#[account_procedure]`
@@ -543,15 +543,15 @@ Rules:
   `a component cannot combine #[auth_script] and #[account_procedure]`.
 - Inherent (`impl BankStorage`) methods are not exported at all, and "exported to WIT" is not the
   same thing as "is an account procedure".
-- The `cargo miden new` scaffolding under `compiler:sdk/v0.14.0-rc.1:extra/templates/` omits
+- The `cargo miden new` scaffolding under `compiler:sdk/v0.14.0:extra/templates/` omits
   `#[account_procedure]`, so freshly-generated code is wrong out of the box. Use
-  `compiler:sdk/v0.14.0-rc.1:examples/counter-contract/src/lib.rs` and
-  `compiler:sdk/v0.14.0-rc.1:examples/basic-wallet/src/lib.rs` as the reference instead.
+  `compiler:sdk/v0.14.0:examples/counter-contract/src/lib.rs` and
+  `compiler:sdk/v0.14.0:examples/basic-wallet/src/lib.rs` as the reference instead.
 
 **MASM equivalent**: a hand-written or standards MASM component marks its exports with the
 `@account_procedure` / `@auth_script` attributes — "a procedure is part of the component interface
 if it has either the `@account_procedure` or `@auth_script` attributes". See
-`protocol:v0.16.0-rc.6:crates/miden-standards/asm/standards/wallets/basic.masm`.
+`protocol:v0.16.0-rc.9:crates/miden-standards/asm/standards/wallets/basic.masm`.
 
 ## P14: Some Kernel Calls Are Legal Only in a Specific Runtime Context
 
@@ -565,7 +565,7 @@ Three restrictions enforced by the kernel, not the type system:
 | `native_account::{add_asset, remove_asset}` | an account-component procedure | `exec.memory::assert_native_account` + `exec.authenticate_account_origin` |
 | `native_account::incr_nonce()` / `self.incr_nonce()` | the account's `#[auth_script]` authentication procedure | `exec.memory::assert_native_account` + `exec.assert_auth_procedure_origin` |
 
-All three are in `protocol:v0.16.0-rc.6:crates/miden-protocol/asm/kernels/transaction/lib/api.masm`
+All three are in `protocol:v0.16.0-rc.9:crates/miden-protocol/asm/kernels/transaction/lib/api.masm`
 (`pub proc output_note_create`, `pub proc account_add_asset`, `pub proc account_incr_nonce`).
 
 Consequences:
@@ -576,7 +576,7 @@ Consequences:
   Recipient) -> NoteIdx` for exactly this reason.
 - Calling `incr_nonce()` from an ordinary component method panics. Only the authentication
   component's single `#[auth_script]` method may do it — see
-  `compiler:sdk/v0.14.0-rc.1:examples/auth-component-no-auth/src/lib.rs`.
+  `compiler:sdk/v0.14.0:examples/auth-component-no-auth/src/lib.rs`.
 
 **Auth components**: exactly one `#[auth_script]` method per `#[component]` trait, and a crate whose
 `miden-project.toml` sets `[package.metadata.miden] project-kind = "authentication-component"` must
@@ -659,8 +659,8 @@ re-exports `AssetId` (not `AssetClass`) from `miden_client::asset`.
 There is **no `AssetVaultKey` type** in either the protocol or the client — searching for one is a
 dead end, and a type of that name in your code or in generated bindings is stale. The vault-key type
 is `AssetId`, declared at
-`protocol:v0.16.0-rc.6:crates/miden-protocol/src/asset/vault/asset_id.rs:42` and re-exported by the
-client at `miden-client:v0.16.0-rc.2:crates/rust-client/src/lib.rs:195`.
+`protocol:v0.16.0-rc.9:crates/miden-protocol/src/asset/vault/asset_id.rs:42` and re-exported by the
+client at `miden-client:v0.16.0-rc.5:crates/rust-client/src/lib.rs:195`.
 
 On the guest side nothing renamed: `miden::Asset` still has a field literally named `key`, and that
 word is the asset-ID word (P7).
@@ -691,24 +691,24 @@ Preimage order:
  BLOCK_COMMITMENT, [expiration_delta, user_param0..2], [user_param3..6]]
 ```
 
-Sources: `protocol:v0.16.0-rc.6:crates/miden-protocol/src/transaction/tx_summary.rs` and
-`protocol:v0.16.0-rc.6:crates/miden-standards/asm/standards/auth/mod.masm`.
+Sources: `protocol:v0.16.0-rc.9:crates/miden-protocol/src/transaction/tx_summary.rs` and
+`protocol:v0.16.0-rc.9:crates/miden-standards/asm/standards/auth/mod.masm`.
 
 ## P20: Version Pins Must Be Exact Pre-Release Strings
 
 **Severity**: High — a truncated requirement silently fails to resolve
 
 Cargo's default `^` requirement never matches a pre-release, so `miden = "0.14"`,
-`cargo-miden = "0.10"`, `miden-protocol = "0.16"` all fail to resolve against `0.14.0-rc.1` /
-`0.10.0-rc.1` / `0.16.0-rc.6`. Always write the full string:
+`cargo-miden = "0.10"`, `miden-protocol = "0.16"` all fail to resolve against `0.14.0` /
+`0.10.0` / `0.16.0-rc.9`. Always write the full string:
 
 ```toml
-miden           = "0.14.0-rc.1"     # guest SDK crate, in contract crates
-cargo-miden     = "0.10.0-rc.1"     # build tool
-miden-protocol  = "0.16.0-rc.6"
-miden-standards = "0.16.0-rc.6"
-miden-testing   = "0.16.0-rc.6"
-miden-client    = "0.16.0-rc.2"
+miden           = "0.14.0"     # guest SDK crate, in contract crates
+cargo-miden     = "0.10.0"     # build tool
+miden-protocol  = "0.16.0-rc.9"
+miden-standards = "0.16.0-rc.9"
+miden-testing   = "0.16.0-rc.9"
+miden-client    = "0.16.0-rc.5"
 miden-assembly  = "0.29.1"          # also miden-core, miden-core-lib,
                                     # miden-processor, miden-prover, miden-crypto,
                                     # miden-mast-package
@@ -719,11 +719,11 @@ and contract SDK 1.97, plus the pinned nightly `2026-04-30` with target `wasm32-
 crates.
 
 **Accepted toolchain skew.** The contract SDK / compiler line builds against
-`miden-protocol = "=0.16.0-alpha.4"` and VM `0.25`, while the protocol/client line is `0.16.0-rc.6`
+`miden-protocol = "=0.16.0-alpha.4"` and VM `0.25`, while the protocol/client line is `0.16.0-rc.9`
 / `0.29.1`. That is expected. The consequence: **one Cargo graph cannot hold both
-`cargo-miden 0.10.0-rc.1` and `miden-client 0.16.0-rc.2`** — `cargo-miden` pulls
+`cargo-miden 0.10.0` and `miden-client 0.16.0-rc.5`** — `cargo-miden` pulls
 `miden-protocol =0.16.0-alpha.4` (exact) through `midenc-compile` → `midenc-session`, while
-`miden-client 0.16.0-rc.2` requires `miden-protocol 0.16.0-rc.6`; both land in the same `0.16`
+`miden-client 0.16.0-rc.5` requires `miden-protocol 0.16.0-rc.9`; both land in the same `0.16`
 compatibility range, so Cargo must pick one version and cannot satisfy both. Split the build tool
 and the client into separate crates, or pin the whole stack to one line (the compiler's own
 integration tests pin `miden-client = "0.16.0-alpha.1"` / `miden-testing = "0.16.0-alpha.2"`).
@@ -740,7 +740,7 @@ spellings: `lib` / `library`, `kernel`, `account` / `account-component`, `note`,
 a library`.
 
 Full account-component manifest, matching
-`compiler:sdk/v0.14.0-rc.1:examples/counter-contract/miden-project.toml`:
+`compiler:sdk/v0.14.0:examples/counter-contract/miden-project.toml`:
 
 ```toml
 [package]

@@ -8,11 +8,11 @@ description: Complete guide to building Miden frontends with @miden-sdk/react ho
 ## Package pins
 
 ```json
-"@miden-sdk/react": "0.16.0-rc.3",
-"@miden-sdk/miden-sdk": "0.16.0-rc.3"
+"@miden-sdk/react": "0.16.0-rc.7",
+"@miden-sdk/miden-sdk": "0.16.0-rc.7"
 ```
 
-`@miden-sdk/react` declares `@miden-sdk/miden-sdk` as a peer dependency at `^0.16.0-rc.3` and `react` at `>=18.0.0`. Pin exactly, or use a range that itself names a prerelease: npm excludes prereleases from `"0.16"`, `"^0.16.0"`, `"~0.16.0"` and `"0.16.x"`, so those match nothing.
+`@miden-sdk/react` declares `@miden-sdk/miden-sdk` as a peer dependency at `^0.16.0-rc.7` and `react` at `>=18.0.0`. Pin exactly, or use a range that itself names a prerelease: npm excludes prereleases from `"0.16"`, `"^0.16.0"`, `"~0.16.0"` and `"0.16.x"`, so those match nothing.
 
 ## SDK Choice
 

@@ -160,7 +160,7 @@ Pin `@miden-sdk/miden-sdk` and `@miden-sdk/react` to the **same exact** version 
 a shared WASM ABI, and a plain `"0.16"` or `^0.16.0` does not resolve a pre-release:
 
 ```json
-{ "@miden-sdk/miden-sdk": "0.16.0-rc.3", "@miden-sdk/react": "0.16.0-rc.3" }
+{ "@miden-sdk/miden-sdk": "0.16.0-rc.7", "@miden-sdk/react": "0.16.0-rc.7" }
 ```
 
 Hooks worth mocking that are easy to forget: `useBridge`, `useChainAnchor`, `useCompile`,

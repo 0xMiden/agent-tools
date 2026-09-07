@@ -5,8 +5,8 @@ description: Guide to testing Miden smart contracts with MockChain. Covers test 
 
 # Miden Testing Patterns (MockChain)
 
-These patterns target `miden-protocol` / `miden-standards` / `miden-testing` `0.16.0-rc.6` with
-`miden-client` `0.16.0-rc.2`. Write the full pre-release strings — Cargo does not match a
+These patterns target `miden-protocol` / `miden-standards` / `miden-testing` `0.16.0-rc.9` with
+`miden-client` `0.16.0-rc.5`. Write the full pre-release strings — Cargo does not match a
 pre-release against a plain `"0.16"` requirement.
 
 `MockChain` and its builders live in `miden-testing`, which is also re-exported as
@@ -80,8 +80,8 @@ Build contracts **out of process** with the `cargo miden build` CLI and load the
 package in the test.
 
 Do not add `cargo-miden` as a library dependency of a crate that also depends on `miden-client`.
-`cargo-miden` pulls `miden-protocol =0.16.0-alpha.4` transitively, and `miden-client 0.16.0-rc.2`
-pulls `miden-protocol 0.16.0-rc.6`. Those are the same `0.16` compatibility range with an exact
+`cargo-miden` pulls `miden-protocol =0.16.0-alpha.4` transitively, and `miden-client 0.16.0-rc.5`
+pulls `miden-protocol 0.16.0-rc.9`. Those are the same `0.16` compatibility range with an exact
 requirement on one side, so Cargo cannot resolve both in one graph. Building out of process avoids
 the conflict entirely.
 
@@ -374,14 +374,14 @@ The faucet must be set up first (see Step 3) and the sender wallet must hold suf
 ## Key Dependencies
 
 ```toml
-miden-client    = "0.16.0-rc.2"   # with features = ["testing"] for miden_client::testing
-miden-protocol  = "0.16.0-rc.6"
-miden-standards = "0.16.0-rc.6"
-miden-testing   = "0.16.0-rc.6"
+miden-client    = "0.16.0-rc.5"   # with features = ["testing"] for miden_client::testing
+miden-protocol  = "0.16.0-rc.9"
+miden-standards = "0.16.0-rc.9"
+miden-testing   = "0.16.0-rc.9"
 ```
 
-The contracts a test builds depend on the guest SDK `miden = "0.14.0-rc.1"`, built with
-`cargo-miden` / `midenc` `0.10.0-rc.1` on the pinned nightly (`nightly-2026-04-30`, target
+The contracts a test builds depend on the guest SDK `miden = "0.14.0"`, built with
+`cargo-miden` / `midenc` `0.10.0` on the pinned nightly (`nightly-2026-04-30`, target
 `wasm32-wasip2`). See Step 4 for why `cargo-miden` must not be a library dependency of the test
 crate.
 

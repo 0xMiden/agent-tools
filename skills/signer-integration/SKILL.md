@@ -6,8 +6,8 @@ description: Guide to integrating external signers (Para, Turnkey, MidenFi walle
 # Miden Signer Integration
 
 ```json
-"@miden-sdk/react": "0.16.0-rc.3",
-"@miden-sdk/miden-sdk": "0.16.0-rc.3"
+"@miden-sdk/react": "0.16.0-rc.7",
+"@miden-sdk/miden-sdk": "0.16.0-rc.7"
 ```
 
 ## Overview

@@ -5,7 +5,7 @@ description: Guide for advanced Miden frontend development using source repo exp
 
 # Advanced Miden Frontend Development: Source-Guided Context Engineering
 
-Every path and symbol below is verified against `web-sdk` at tag `v0.16.0-rc.3`.
+Every path and symbol below is verified against `web-sdk` at tag `v0.16.0-rc.7`.
 
 ## Development Approach
 
@@ -80,7 +80,7 @@ Clone the repo at the tag you build against, alongside your project:
 ```bash
 # Contains the React SDK source (@miden-sdk/react), the WASM client bindings
 # (@miden-sdk/miden-sdk), the Vite plugin, and a working example wallet.
-git clone --depth 1 --branch v0.16.0-rc.3 https://github.com/0xMiden/web-sdk.git ../web-sdk
+git clone --depth 1 --branch v0.16.0-rc.7 https://github.com/0xMiden/web-sdk.git ../web-sdk
 ```
 
 Workspace layout at the tag: `crates/` holds `web-client`, `idxdb-store`, `js-export-macro`, `mobile-prover`; `packages/` holds `react-sdk`, `vite-plugin`, and the prebuilt `node-sdk-*` binaries.

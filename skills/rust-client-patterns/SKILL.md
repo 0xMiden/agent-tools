@@ -22,12 +22,12 @@ Pin the exact pre-release strings; Cargo does not match a pre-release against a
 plain `"0.16"` requirement:
 
 ```toml
-miden-client              = "0.16.0-rc.2"
-miden-client-sqlite-store = "0.16.0-rc.2"
-miden-protocol            = "0.16.0-rc.6"
-miden-standards           = "0.16.0-rc.6"
-miden-tx                  = "0.16.0-rc.6"
-miden-tx-batch            = "0.16.0-rc.6"
+miden-client              = "0.16.0-rc.5"
+miden-client-sqlite-store = "0.16.0-rc.5"
+miden-protocol            = "0.16.0-rc.9"
+miden-standards           = "0.16.0-rc.9"
+miden-tx                  = "0.16.0-rc.9"
+miden-tx-batch            = "0.16.0-rc.9"
 miden-assembly            = "0.29.1"
 miden-core                = "0.29.1"
 miden-processor           = "0.29.1"

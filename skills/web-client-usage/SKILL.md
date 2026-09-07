@@ -7,8 +7,8 @@ description: Conventions for writing JavaScript/TypeScript code that uses the Mi
 
 This skill targets the `@miden-sdk/miden-sdk` npm package published from
 [`0xMiden/web-sdk`](https://github.com/0xMiden/web-sdk). The workspace is
-version `0.16.0-rc.3` and builds on the `miden-client` Rust crate at
-`0.16.0-rc.2` (`Cargo.toml`). For React-hook usage, prefer the
+version `0.16.0-rc.7` and builds on the `miden-client` Rust crate at
+`0.16.0-rc.5` (`Cargo.toml`). For React-hook usage, prefer the
 `react-sdk-patterns` skill — only fall through to the raw client when a hook
 does not cover what you need.
 
@@ -21,8 +21,8 @@ ranges that do not themselves name one. Pin exactly:
 ```json
 {
   "dependencies": {
-    "@miden-sdk/miden-sdk": "0.16.0-rc.3",
-    "@miden-sdk/react": "0.16.0-rc.3"
+    "@miden-sdk/miden-sdk": "0.16.0-rc.7",
+    "@miden-sdk/react": "0.16.0-rc.7"
   }
 }
 ```

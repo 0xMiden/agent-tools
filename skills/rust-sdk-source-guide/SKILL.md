@@ -80,24 +80,24 @@ release lines:
 
 | Line | Crates | Version | MSRV |
 |---|---|---|---|
-| Contract SDK (guest) | `miden`, `miden-base`, `miden-base-macros`, `miden-base-sys`, `miden-stdlib-sys`, `miden-sdk-alloc` | `0.14.0-rc.1` | 1.97 + nightly `2026-04-30`, target `wasm32-wasip2` |
-| Compiler / build tool | compiler workspace, `midenc`, `cargo-miden` | `0.10.0-rc.1` | 1.97 |
-| Protocol | `miden-protocol`, `miden-standards`, `miden-testing`, `miden-tx`, `miden-tx-batch`, `miden-block-prover`, `miden-agglayer` | `0.16.0-rc.6` | 1.96.1 |
-| Client | `miden-client` | `0.16.0-rc.2` | 1.96 |
+| Contract SDK (guest) | `miden`, `miden-base`, `miden-base-macros`, `miden-base-sys`, `miden-stdlib-sys`, `miden-sdk-alloc` | `0.14.0` | 1.97 + nightly `2026-04-30`, target `wasm32-wasip2` |
+| Compiler / build tool | compiler workspace, `midenc`, `cargo-miden` | `0.10.0` | 1.97 |
+| Protocol | `miden-protocol`, `miden-standards`, `miden-testing`, `miden-tx`, `miden-tx-batch`, `miden-block-prover`, `miden-agglayer` | `0.16.0-rc.9` | 1.96.1 |
+| Client | `miden-client` | `0.16.0-rc.5` | 1.96 |
 | VM | `miden-assembly`, `miden-assembly-syntax`, `miden-core`, `miden-core-lib`, `miden-crypto`, `miden-mast-package`, `miden-processor`, `miden-project`, `miden-prover` | `0.29.1` | 1.96.1 |
 
 **Always write full pre-release strings.** Cargo's `^` requirement never matches a pre-release, so
 `miden = "0.14"`, `cargo-miden = "0.10"` and `miden-protocol = "0.16"` all fail to resolve. Write
-`miden = "0.14.0-rc.1"`, `cargo-miden = "0.10.0-rc.1"`, `miden-protocol = "0.16.0-rc.6"`,
-`miden-standards = "0.16.0-rc.6"`, `miden-testing = "0.16.0-rc.6"`,
-`miden-client = "0.16.0-rc.2"`, VM crates `"0.29.1"`.
+`miden = "0.14.0"`, `cargo-miden = "0.10.0"`, `miden-protocol = "0.16.0-rc.9"`,
+`miden-standards = "0.16.0-rc.9"`, `miden-testing = "0.16.0-rc.9"`,
+`miden-client = "0.16.0-rc.5"`, VM crates `"0.29.1"`.
 
 **Accepted skew, and the one thing it breaks.** The compiler workspace builds against
 `miden-protocol = "=0.16.0-alpha.4"` and VM `0.25`, deliberately lagging the rest of the 0.16 line.
 That is expected. The consequence is that **a single Cargo graph cannot hold both `cargo-miden
-0.10.0-rc.1` and `miden-client 0.16.0-rc.2`**: `cargo-miden` pulls `miden-protocol =0.16.0-alpha.4`
-(exact) through `midenc-compile` → `midenc-session`, while `miden-client 0.16.0-rc.2` requires
-`miden-protocol 0.16.0-rc.6`. Both requirements land in the same `0.16` compatibility range, so
+0.10.0` and `miden-client 0.16.0-rc.5`**: `cargo-miden` pulls `miden-protocol =0.16.0-alpha.4`
+(exact) through `midenc-compile` → `midenc-session`, while `miden-client 0.16.0-rc.5` requires
+`miden-protocol 0.16.0-rc.9`. Both requirements land in the same `0.16` compatibility range, so
 Cargo must select one version and cannot satisfy both. Keep the build tool and the client in
 separate crates, or pin the whole stack to the alpha line the way the compiler's own
 `compiler/tests/integration-network/Cargo.toml` does (`miden-client = "0.16.0-alpha.1"`,
@@ -111,15 +111,15 @@ Clone these repos alongside your project for reference. Claude will explore them
 
 ```bash
 # Required: protocol layer — standard note types and account components (crate: miden-protocol)
-git clone --branch v0.16.0-rc.6 https://github.com/0xMiden/protocol.git ../protocol
+git clone --branch v0.16.0-rc.9 https://github.com/0xMiden/protocol.git ../protocol
 
 # Required: client API for deployment and chain interaction (crate: miden-client)
-git clone --branch v0.16.0-rc.2 https://github.com/0xMiden/rust-sdk.git ../rust-sdk
+git clone --branch v0.16.0-rc.5 https://github.com/0xMiden/rust-sdk.git ../rust-sdk
 
-# Required: the Rust SDK macros + compiler. The tags `sdk/v0.14.0-rc.1`, `v0.10.0-rc.1` and
+# Required: the Rust SDK macros + compiler. The tags `sdk/v0.14.0`, `v0.10.0` and
 # `templates/v0.32.0-rc.1` all point at the same commit (084877ef5, "release: compiler 0.10,
 # sdk 0.14, templates 0.32"); the sdk/* tag names the guest SDK version you will depend on.
-git clone --branch sdk/v0.14.0-rc.1 https://github.com/0xMiden/compiler.git ../compiler
+git clone --branch sdk/v0.14.0 https://github.com/0xMiden/compiler.git ../compiler
 
 # Optional: the VM / assembler / package format, when you need MASM or `.masp` internals
 git clone --branch v0.29.1 https://github.com/0xMiden/miden-vm.git ../miden-vm

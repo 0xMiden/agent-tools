@@ -5,18 +5,18 @@ description: Critical pitfalls and safety rules for Miden frontend development. 
 
 # Miden Frontend Pitfalls
 
-Every claim below is verified against `web-sdk` at tag `v0.16.0-rc.3`. Pin exactly:
+Every claim below is verified against `web-sdk` at tag `v0.16.0-rc.7`. Pin exactly:
 
 ```json
 {
   "dependencies": {
-    "@miden-sdk/miden-sdk": "0.16.0-rc.3",
-    "@miden-sdk/react": "0.16.0-rc.3"
+    "@miden-sdk/miden-sdk": "0.16.0-rc.7",
+    "@miden-sdk/react": "0.16.0-rc.7"
   }
 }
 ```
 
-Caret/tilde ranges over a plain `0.16.0` (`"^0.16.0"`, `"~0.16.0"`, `"0.16.x"`) do **not** match a prerelease version — npm excludes prereleases from ranges that do not themselves name one. Use the exact string above, or `"^0.16.0-rc.3"` (which is what the SDK's own example wallet uses in `packages/react-sdk/examples/wallet/package.json`).
+Caret/tilde ranges over a plain `0.16.0` (`"^0.16.0"`, `"~0.16.0"`, `"0.16.x"`) do **not** match a prerelease version — npm excludes prereleases from ranges that do not themselves name one. Use the exact string above, or `"^0.16.0-rc.7"` (which is what the SDK's own example wallet uses in `packages/react-sdk/examples/wallet/package.json`).
 
 ## FP1: `useMidenClient()` Throws on Render Before the Client Is Ready (HIGH)
 
@@ -191,7 +191,7 @@ Both hex and bech32 are accepted everywhere hooks take an account reference. Pre
 
 **Gotcha — the HRP is inferred from your `rpcUrl` string, not from the chain.** `bech32id()` lowercases the resolved `rpcUrl` and looks for the substrings `devnet`/`mdev`, `mainnet`, then `testnet`/`mtst`; **anything else falls back to testnet.** `MidenConfig.rpcUrl` resolves the shorthands `"testnet"`, `"devnet"` and `"localhost"`/`"local"` to concrete URLs and passes any other value through verbatim — so a private RPC endpoint whose hostname contains none of those substrings (or `"localhost"`, which resolves to `http://localhost:57291`) will silently render `mtst1...` addresses. If you run a custom or local network, do not treat `bech32id()` output as authoritative; key off hex.
 
-Source: `protocol:v0.16.0-rc.6:crates/miden-protocol/src/address/network_id.rs`, `crates/web-client/src/models/account_id.rs`, `packages/react-sdk/src/utils/accountBech32.ts`, `packages/react-sdk/src/utils/network.ts`.
+Source: `protocol:v0.16.0-rc.9:crates/miden-protocol/src/address/network_id.rs`, `crates/web-client/src/models/account_id.rs`, `packages/react-sdk/src/utils/accountBech32.ts`, `packages/react-sdk/src/utils/network.ts`.
 
 ## FP6: Auto-Sync Side Effects (MEDIUM)
 
@@ -254,7 +254,7 @@ It accepts **four** options:
 | `rpcProxyTarget` | `"https://rpc.testnet.miden.io"` | gRPC-web dev proxy target; `false` disables the proxy |
 | `rpcProxyPath` | `"/rpc.Api"` | Path prefix the proxy intercepts |
 
-**Do not trust the plugin README on `crossOriginIsolation`.** At `v0.16.0-rc.3` the README documents the default as `true`; the executable source is `false`. The source is correct.
+**Do not trust the plugin README on `crossOriginIsolation`.** At `v0.16.0-rc.7` the README documents the default as `true`; the executable source is `false`. The source is correct.
 
 Everything else the plugin does — `build.target: "esnext"`, `optimizeDeps.exclude`, `resolve.dedupe` (including React and `@miden-sdk/react`), the esbuild externalization that keeps React context identity intact, worker format — is covered in `vite-wasm-setup`, along with production host configs for Nginx, Vercel and Cloudflare. Go there rather than duplicating it here.
 

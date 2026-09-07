@@ -5,7 +5,7 @@ description: Guide to configuring Vite for Miden WASM applications. Covers the m
 
 # Vite + WASM Configuration for Miden
 
-Everything below is current for `@miden-sdk/*` `0.16.0-rc.3` (web-sdk repo).
+Everything below is current for `@miden-sdk/*` `0.16.0-rc.7` (web-sdk repo).
 
 ## Required `vite.config.ts`
 
@@ -54,7 +54,7 @@ midenVitePlugin({
 ```
 
 > **Do not trust `packages/vite-plugin/README.md` for the
-> `crossOriginIsolation` default.** At `0.16.0-rc.3` that README still shows
+> `crossOriginIsolation` default.** At `0.16.0-rc.7` that README still shows
 > `crossOriginIsolation: true, // default` and a `**Default:** \`true\`` bullet,
 > while the executable source destructures `crossOriginIsolation = false` and a
 > unit test asserts the plugin "does not set COOP/COEP headers by default"
@@ -159,17 +159,17 @@ You don't need to install or configure `vite-plugin-wasm`,
 
 ## Required Dependencies
 
-At `0.16.0-rc.3`, `@miden-sdk/miden-sdk`, `@miden-sdk/react`, and
+At `0.16.0-rc.7`, `@miden-sdk/miden-sdk`, `@miden-sdk/react`, and
 `@miden-sdk/vite-plugin` all publish at the same version. Pin them exactly:
 
 ```json
 {
   "dependencies": {
-    "@miden-sdk/miden-sdk": "0.16.0-rc.3",
-    "@miden-sdk/react": "0.16.0-rc.3"
+    "@miden-sdk/miden-sdk": "0.16.0-rc.7",
+    "@miden-sdk/react": "0.16.0-rc.7"
   },
   "devDependencies": {
-    "@miden-sdk/vite-plugin": "0.16.0-rc.3"
+    "@miden-sdk/vite-plugin": "0.16.0-rc.7"
   }
 }
 ```
@@ -178,12 +178,12 @@ Notes:
 
 - **These are prerelease versions, and npm range syntax does not match
   prereleases.** `"0.16"`, `"^0.16.0"`, `"~0.16.0"` and `"0.16.x"` will NOT
-  resolve to `0.16.0-rc.3` — they either fail to resolve or silently drift to a
+  resolve to `0.16.0-rc.7` — they either fail to resolve or silently drift to a
   later stable line. Use the exact string, or the caret-on-a-prerelease form
-  `"^0.16.0-rc.3"` that the in-repo example
+  `"^0.16.0-rc.7"` that the in-repo example
   (`packages/react-sdk/examples/wallet/package.json`) uses.
 - **`@miden-sdk/react` and `@miden-sdk/miden-sdk` must match.** The React SDK's
-  peer dependency is `"@miden-sdk/miden-sdk": "^0.16.0-rc.3"`, and the repo
+  peer dependency is `"@miden-sdk/miden-sdk": "^0.16.0-rc.7"`, and the repo
   enforces the coupling in CI. Per its `README.md`: "A repo-wide
   `scripts/check-react-sdk-sync.js` enforces that React peer ranges and example
   dependencies pin to the exact patch version of the WASM client they were
