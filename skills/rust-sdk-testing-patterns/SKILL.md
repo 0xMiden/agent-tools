@@ -197,8 +197,9 @@ because `&mut T: Rng`. Other builder methods: `package`, `script`, `code`, `note
 
 > `Felt::new(u64)` is **fallible** — it returns `Result<Felt, FeltFromIntError>`. `note_storage`
 > takes `impl IntoIterator<Item = Felt>`, so build each felt with the infallible
-> `Felt::from(42_u32)` for in-range literals (`From<u8>/<u16>/<u32>` are infallible); for a `u64`
-> use `Felt::new(n)?` or `Felt::new_unchecked(n)`.
+> `Felt::from(42_u32)` for in-range literals (`From<u8>/<u16>/<u32>` are infallible); for an
+> arbitrary `u64`, use `Felt::new(n)?`. Use `Felt::new_unchecked(n)` only after proving
+> `n < Felt::ORDER`.
 
 > A note carries at most `MAX_ASSETS_PER_NOTE` = **16** assets.
 
@@ -362,7 +363,7 @@ transaction will be included in.
    — or pass it via `NoteBuilder::add_assets`.
 2. Seed a `RandomCoin` from `Word::from(NoteScript::from_package(note_package.as_ref())?.root())`.
 3. Pass any note inputs into `note_storage(...)?`, building each felt with the infallible
-   `Felt::from(_u32)` for in-range literals or `Felt::new_unchecked(n)` for `u64` inputs.
+   `Felt::from(_u32)` for in-range literals or checked `Felt::new(n)?` for arbitrary `u64` inputs.
 4. Finish with `.package((*note_package).clone()).build()?`.
 
 The faucet must be set up first (see Step 3) and the sender wallet must hold sufficient assets
@@ -392,7 +393,7 @@ The contracts a test builds depend on the guest SDK `miden = "0.14.0"`, built wi
 - [ ] Contracts are built out of process with `cargo miden build`, not by depending on `cargo-miden`
 - [ ] `NoteScript::root()` converted with `Word::from(..)` before seeding `RandomCoin`
 - [ ] `NoteBuilder::tag(..)` is passed a `u32`
-- [ ] Note-storage felts built with infallible `Felt::from(_u32)` or `Felt::new_unchecked(_u64)`
+- [ ] Note-storage felts built with infallible `Felt::from(_u32)` or checked `Felt::new(n)?` for arbitrary `u64` inputs
 - [ ] `Note::new(..)` is passed a `PartialNoteMetadata` (not `NoteMetadata`)
 - [ ] Transaction scripts built with `TransactionScript::from_package(&package)?`
 - [ ] Execution goes through `chain.build_transaction(..)` with `.authenticated_input_note(..)` / `.unauthenticated_input_note(..)`, then `.build()?.execute().await?`
