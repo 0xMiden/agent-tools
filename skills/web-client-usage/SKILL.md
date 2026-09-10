@@ -884,15 +884,18 @@ Note scripts are **MASM libraries with a single `@note_script`-annotated
 procedure**, not begin/end programs — `client.compile.noteScript` builds the
 correct shape from a procedure body.
 
-## What the web SDK does not expose
+## Web SDK surface boundaries
 
 Guards against bad find-replaces and misremembered APIs:
 
 - There is no JS/TS `AssetId`, `AssetClass` or `AssetVaultKey` type. Every
   `assetId`-named field in the React SDK is a faucet account id string.
-- There is no fee-configuration API. Fees are paid by the account's auth
-  procedure; nothing in the web SDK sets conversion info. The only
-  fee-adjacent JS surface is network-account note pricing (`NoteScriptFee`,
+- Fee-aware custom requests start from the public client instance method
+  `await client.feeAwareTransactionRequestBuilder(executingAccount)`. The
+  client supplies native-asset 1:1 conversion information, and the returned
+  builder already carries a salt when the auth scheme requires one. Use
+  `withFeeConversionSalt` only to set a pre-agreed salt on a bare builder or
+  replace the generated value intentionally. This is separate from network-account note pricing (`NoteScriptFee`,
   `AccountComponent.createNetworkAuthComponents`, `NoteScript.feeSponsorship()`).
 - A note may carry at most **16** assets (`MAX_ASSETS_PER_NOTE` in the
   protocol). It is enforced in `NoteAssets::new`, so it surfaces as a runtime

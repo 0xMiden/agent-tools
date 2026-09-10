@@ -77,13 +77,10 @@ The 4th argument is `token_supply: Option<u64>` (an explicit `None` is treated a
 ### 4. Build Contracts
 
 Build contracts **out of process** with the `cargo miden build` CLI and load the resulting `.masp`
-package in the test.
-
-Do not add `cargo-miden` as a library dependency of a crate that also depends on `miden-client`.
-`cargo-miden` pulls `miden-protocol =0.16.0-alpha.4` transitively, and `miden-client 0.16.0-rc.5`
-pulls `miden-protocol 0.16.0-rc.9`. Those are the same `0.16` compatibility range with an exact
-requirement on one side, so Cargo cannot resolve both in one graph. Building out of process avoids
-the conflict entirely.
+package in the test. This keeps contract compilation separate from the test binary's client
+dependencies. At `sdk/v0.14.0`, the compiler's internal matrix uses
+`miden-protocol =0.16.0-rc.4` and the VM `0.29` line; do not replace the test crate's client pins
+with that internal matrix.
 
 Package artefacts: the extension is `.masp` (`Package::EXTENSION`), magic `MASP\0`, package format
 version `[6, 0, 0]`, MAST wire version `[0, 0, 4]`. There is no `.masl`.
@@ -381,9 +378,8 @@ miden-testing   = "0.16.0-rc.9"
 ```
 
 The contracts a test builds depend on the guest SDK `miden = "0.14.0"`, built with
-`cargo-miden` / `midenc` `0.10.0` on the pinned nightly (`nightly-2026-04-30`, target
-`wasm32-wasip2`). See Step 4 for why `cargo-miden` must not be a library dependency of the test
-crate.
+`cargo-miden` / `midenc` `0.10.0` on the pinned nightly (`nightly-2026-09-01`, target
+`wasm32-wasip2`). See Step 4 for the out-of-process build pattern.
 
 ## Validation Checklist
 

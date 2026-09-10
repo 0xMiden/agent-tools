@@ -68,7 +68,7 @@ Updating account state and producing output notes are effects of phases 2-3, not
 
 The trailing user parameters give an auth procedure a way to bind extra data (a replay-protection salt, a maximum fee) into the same signature. A component that hashes a shorter layout **compiles and fails at runtime**; the MASM side of this constant is `TX_SUMMARY_NUM_ELEMENTS = 24` in the standard auth library.
 
-**Fees are paid from the authentication procedure.** The auth procedure computes the fee and funds a public `TX_FEE` note out of the account's vault before the summary is created. Callers supply the conversion data with `TransactionRequestBuilder::fee_conversion_info(conversion_info, salt)`; network accounts need a fee policy of their own.
+**Fees are paid from the authentication procedure.** The auth procedure computes the fee and funds a public `TX_FEE` note out of the account's vault before the summary is created. Rust callers can declare a conversion salt with `TransactionRequestBuilder::fee_conversion_salt(salt)`; the client creates the native-asset 1:1 conversion information during transaction preparation. Network accounts need a fee policy of their own.
 
 **Important**: A two-party transfer (Alice sends Bob tokens) requires TWO transactions:
 1. Alice's transaction creates a P2ID note with tokens attached

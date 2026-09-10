@@ -112,7 +112,7 @@ Cross-origin isolation is **not** a universal requirement. Both `@miden-sdk/mide
 - The **default** entries (`@miden-sdk/react`, `@miden-sdk/react/lazy`, `@miden-sdk/miden-sdk`, `@miden-sdk/miden-sdk/lazy`) ship **single-threaded (ST)** WASM that, in the SDK README's words, "loads in any browser context" — **no COOP/COEP required**. The SDK's own example wallet runs `MidenProvider` off the default `@miden-sdk/react` with a bare `midenVitePlugin()` and no isolation.
 - The **MT** entries (`/mt`, `/mt/lazy`, wasm-bindgen-rayon, ~3–5× faster local proving) load **only** on a page where `self.crossOriginIsolated === true`. Without `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` the browser refuses to construct shared memory and `__wbg_init` throws `WebAssembly.Memory: shared memory requires crossOriginIsolated` (or a browser-specific variant).
 
-Pick ST (the default) and you need no headers. Opt into MT only for local proving on a host whose headers you control — and then you must also `await initThreadPool(n)` once at startup, or you have shipped multi-threaded WASM that runs single-threaded.
+Pick ST (the default) and you need no headers. Opt into MT only for local proving on a host whose headers you control. With the default worker-backed client, the worker initializes its own pool automatically when the page is isolated and multiple hardware threads are available. Call `initThreadPool(n)` manually only for a direct current-thread MT client with `useWorker: false` (or no worker support), and do so in that client's realm.
 
 If you do opt into MT, request isolation explicitly; the plugin default is `false` (see FP8):
 

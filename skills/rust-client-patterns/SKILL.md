@@ -378,17 +378,15 @@ the compiler will not catch on the summary path.
 
 ```rust
 let request = TransactionRequestBuilder::new()
-    .fee_conversion_info(conversion_info, salt)   // salt: Word, mandatory
+    .fee_conversion_salt(salt)
     .build()?;
 ```
 
-`fee_conversion_info` **sets the auth arg**, so it conflicts with a manual
-`auth_arg()` — the last call wins, and a manually-set auth arg is silently
-overwritten. Only `AuthSingleSig` and `AuthMultisig` accept it; any other auth
-component is rejected before execution with
-`TransactionRequestError::FeeConversionInfoUnsupported(String)`. The type is
-reachable as `miden_client::account::component::FeeConversionInfo` (re-exported
-from `miden_standards::account::auth`), **not** from `miden_client::auth`.
+`fee_conversion_salt` declares the salt; during transaction preparation the client creates the
+native-asset 1:1 fee-conversion information. It and `auth_arg()` are mutually exclusive: setting
+one clears the other. Leave the salt unset for the supported single-signature default. The
+multisig, smart-multisig, and guarded-multisig auth variants require a caller-chosen salt; auth
+components that do not support fee conversion reject an explicitly declared salt.
 
 ### `AssetId` is the vault key, not the asset class
 

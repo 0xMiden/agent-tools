@@ -196,12 +196,10 @@ const adapter: WalletAdapterLike = {
 Write wallet-connect UI against `useSigner()` and this duck type rather than against a specific
 adapter package, and the tests stay valid whichever adapter ships.
 
-> **Not covered here:** the concrete signer packages (`@miden-sdk/use-miden-para-react`,
-> `@miden-sdk/miden-turnkey-react`, `@miden-sdk/miden-wallet-adapter-react`) live in repositories
-> outside the Web SDK, so their props, exported hooks and versions cannot be established from it and
-> this skill prescribes nothing about them. The SDK's own example composes signers as siblings under
-> `MultiSignerProvider` with a `SignerSlot` each, and passes `MidenFiSignerProvider` a plain string
-> (`network="testnet"`), not an enum member.
+> **Concrete packages:** `@miden-sdk/para-react`, `@miden-sdk/turnkey-react`, and
+> `@miden-sdk/miden-wallet-adapter-react` are published from the Web SDK repository. The wallet
+> provider takes `WalletAdapterNetwork` from `@miden-sdk/miden-wallet-adapter-base`, not a raw
+> string. Keep package versions on the same v0.16 release line when integration-testing providers.
 
 ## Minimum coverage per component
 

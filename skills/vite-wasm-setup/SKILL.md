@@ -63,7 +63,7 @@ midenVitePlugin({
 Don't reach for `crossOriginIsolation: true` unless you have actually opted into
 the multi-threaded build.
 
-## Multi-Threaded (MT) WASM — Opt-In, Two Requirements
+## Multi-Threaded (MT) WASM — Opt-In Isolation and Worker Initialization
 
 Pass `crossOriginIsolation: true` **only** if you import the multi-threaded WASM
 variant — `@miden-sdk/miden-sdk/mt` (or `/mt/lazy`) and `@miden-sdk/react/mt`
@@ -77,38 +77,28 @@ The MT build uses `wasm-bindgen-rayon` and `SharedArrayBuffer` /
 SDK load. `midenVitePlugin({ crossOriginIsolation: true })` covers the Vite dev
 and preview servers only — see Production Deployment Headers.
 
-**2. You must bring up the rayon thread pool yourself.** Every MT entry
-re-exports `initThreadPool(n)` from `wasm-bindgen-rayon`. **The React SDK does
-NOT call it for you.** Skip it and rayon spawns zero workers, every
-`par_iter(...)` falls through to a sequential loop, and you have paid the full
-COOP/COEP deployment cost to prove single-threaded anyway.
+**2. Let the worker-backed client initialize its own pool.** With the default
+`useWorker !== false` path, the client passes `navigator.hardwareConcurrency`
+to its worker when the page is cross-origin-isolated and multiple hardware
+threads are available. The worker calls `initThreadPool` before constructing
+its `WebClient`. A manual call on the main thread initializes a different WASM
+instance and does not replace the worker's initialization.
+
+Call `initThreadPool(n)` yourself only when using the MT entry directly on the
+current thread, such as a client created with `useWorker: false` or in an
+environment without Worker support:
 
 ```typescript
 import { MidenClient, initThreadPool } from "@miden-sdk/miden-sdk/mt/lazy";
 
 await MidenClient.ready();
-await initThreadPool(navigator.hardwareConcurrency); // once, at startup
+await initThreadPool(navigator.hardwareConcurrency); // same realm as the direct MT client
+const client = await MidenClient.create({ useWorker: false });
 ```
 
-Under React, gate it on readiness inside the provider tree:
-
-```tsx
-import { useEffect } from "react";
-import { MidenProvider, useMiden } from "@miden-sdk/react/mt/lazy";
-import { initThreadPool } from "@miden-sdk/miden-sdk/mt/lazy";
-
-function ThreadPoolBoot() {
-  const { isReady } = useMiden();
-  useEffect(() => {
-    if (!isReady) return;
-    void initThreadPool(navigator.hardwareConcurrency);
-  }, [isReady]);
-  return null;
-}
-```
-
-`initThreadPool` is idempotent — calling it again resolves with the existing
-pool. The ST entries do not expose it (there is no thread pool to bring up).
+Do not add a React `ThreadPoolBoot` component to the normal worker-backed
+provider path. The ST entries do not expose `initThreadPool` because there is
+no thread pool to initialize.
 
 If your app must host third-party iframes, OAuth popups, or other cross-origin
 resources that don't emit `require-corp`, stay on the default ST imports and
@@ -324,7 +314,7 @@ changes are needed beyond ensuring `target` is ES2020+.
 | Issue | Cause | Fix |
 |-------|-------|-----|
 | "SharedArrayBuffer is not defined" (MT build only) | Importing `/mt` or `/mt/lazy` on a page that isn't cross-origin-isolated | Set `midenVitePlugin({ crossOriginIsolation: true })` and add the COOP/COEP headers on your production host; or switch back to the default ST imports, which don't need them |
-| MT build is no faster than ST | `initThreadPool(n)` was never awaited, so rayon has zero workers | `await initThreadPool(navigator.hardwareConcurrency)` once at startup — nothing else calls it for you |
+| Direct MT client with `useWorker: false` is no faster than ST | Its current-thread WASM instance has no initialized rayon pool | Call and await `initThreadPool(navigator.hardwareConcurrency)` in the same realm before using that direct client; do not add this to the default worker-backed path |
 | WASM module not found | SDK not configured correctly | Ensure `midenVitePlugin()` is in the plugins array |
 | "Top-level await not supported" | Missing plugin setup | Ensure `midenVitePlugin()` is in the plugins array (it sets `build.target: "esnext"` and the esbuild target) |
 | Module evaluation hangs on load (Capacitor WKWebView, Next.js SSR) | The default eager entry awaits WASM at module top level; TLA blocks SSR module evaluation and hangs in Capacitor's `capacitor://localhost` scheme handler | Import `@miden-sdk/miden-sdk/lazy` (no top-level await) and `await MidenClient.ready()` before touching any wasm-bindgen constructor |

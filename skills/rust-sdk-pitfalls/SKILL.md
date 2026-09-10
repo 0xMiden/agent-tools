@@ -324,9 +324,9 @@ extern crate alloc;
 use alloc::vec::Vec;
 ```
 
-**Toolchain**: contract crates pin nightly `2026-04-30` with target `wasm32-wasip2` (see
+**Toolchain**: contract crates pin nightly `2026-09-01` with target `wasm32-wasip2` (see
 `compiler:sdk/v0.14.0:examples/counter-contract/rust-toolchain.toml`); the compiler/SDK MSRV is
-1.97. `Cargo.toml` needs `edition = "2024"` and `crate-type = ["cdylib"]`.
+1.99. `Cargo.toml` needs `edition = "2024"` and `crate-type = ["cdylib"]`.
 
 ## P7: Rust SDK `Asset` Is Two Words (ID + Value)
 
@@ -596,7 +596,11 @@ have exactly one (`authentication components require exactly one #[auth_script] 
 | `active_account::has_non_fungible_asset(asset)` | `active_account::has_asset(asset_id: Word) -> bool` |
 | `faucet::create_fungible_asset` / `create_non_fungible_asset` / `has_callbacks`, and the whole `asset` module | build the `Asset` outside the transaction; only `faucet::mint(Asset)` and `faucet::burn(Asset)` remain |
 | `AttachmentLocation` | `Option<u32>` from `find_attachment` |
-| `output_note::set_attachment` | shape-specific setters (`set_word_attachment`, `set_array_attachment`) |
+| `output_note::set_word_attachment` | `output_note::add_word_attachment` (append a new single-word attachment) |
+| `output_note::set_array_attachment` | `output_note::add_attachment` for an advice-backed commitment, or `add_attachment_from_memory` for raw words |
+
+All three replacement operations append a new attachment; none replaces an attachment already on
+the note.
 
 The current `active_account` surface is `get_id() -> AccountId`, `get_nonce() -> Nonce`,
 `compute_commitment() -> Word`, `get_code_commitment() -> Word`, `compute_storage_commitment() ->
@@ -694,13 +698,14 @@ Preimage order:
 Sources: `protocol:v0.16.0-rc.9:crates/miden-protocol/src/transaction/tx_summary.rs` and
 `protocol:v0.16.0-rc.9:crates/miden-standards/asm/standards/auth/mod.masm`.
 
-## P20: Version Pins Must Be Exact Pre-Release Strings
+## P20: Distinguish Final and Prerelease Requirements
 
-**Severity**: High — a truncated requirement silently fails to resolve
+**Severity**: High — a shortened requirement does not select an RC, while a caret requirement may advance within its compatible range
 
-Cargo's default `^` requirement never matches a pre-release, so `miden = "0.14"`,
-`cargo-miden = "0.10"`, `miden-protocol = "0.16"` all fail to resolve against `0.14.0` /
-`0.10.0` / `0.16.0-rc.9`. Always write the full string:
+Final-release requirements such as `miden = "0.14.0"` use Cargo's default caret semantics; write
+`miden = "=0.14.0"` only when exact resolution is required. To select a prerelease, the requirement
+itself must name that prerelease, so `miden-protocol = "0.16"` does not select `0.16.0-rc.9`. Write
+the full target version:
 
 ```toml
 miden           = "0.14.0"     # guest SDK crate, in contract crates
@@ -715,18 +720,13 @@ miden-assembly  = "0.29.1"          # also miden-core, miden-core-lib,
 ```
 
 **MSRV split** — use the highest applicable: `miden-client` 1.96; protocol and VM 1.96.1; compiler
-and contract SDK 1.97, plus the pinned nightly `2026-04-30` with target `wasm32-wasip2` for contract
+and contract SDK 1.99, plus the pinned nightly `2026-09-01` with target `wasm32-wasip2` for contract
 crates.
 
-**Accepted toolchain skew.** The contract SDK / compiler line builds against
-`miden-protocol = "=0.16.0-alpha.4"` and VM `0.25`, while the protocol/client line is `0.16.0-rc.9`
-/ `0.29.1`. That is expected. The consequence: **one Cargo graph cannot hold both
-`cargo-miden 0.10.0` and `miden-client 0.16.0-rc.5`** — `cargo-miden` pulls
-`miden-protocol =0.16.0-alpha.4` (exact) through `midenc-compile` → `midenc-session`, while
-`miden-client 0.16.0-rc.5` requires `miden-protocol 0.16.0-rc.9`; both land in the same `0.16`
-compatibility range, so Cargo must pick one version and cannot satisfy both. Split the build tool
-and the client into separate crates, or pin the whole stack to one line (the compiler's own
-integration tests pin `miden-client = "0.16.0-alpha.1"` / `miden-testing = "0.16.0-alpha.2"`).
+**Expected internal skew.** At `sdk/v0.14.0`, the compiler workspace pins `miden-protocol` and
+`miden-standards` to `=0.16.0-rc.4` and uses the VM `0.29` line. The client examples here use the
+later protocol/client RC pins above. Treat the compiler manifest as its internal build matrix, not
+as a replacement dependency set for client applications.
 
 ## P21: `miden-project.toml` Requires `[lib] path`
 
@@ -767,10 +767,15 @@ method (P14). Other observed values of `supported-types`: `"RegularAccountImmuta
 `["FungibleFaucet", "NonFungibleFaucet"]` for faucets.
 
 Cross-component dependencies go in `miden-project.toml`'s `[dependencies]` — never in `Cargo.toml`,
-which the macros read only for `[package] name` / `description`. The
-`[package.metadata.miden.dependencies].<name>.wit` key is an **optional override**; without it the
-macro searches `<dep-root>`, `<dep-root>/wit` and `<dep-root>/target/generated-wit`. It becomes
-mandatory only when the dependency points at a `.masp` file rather than a directory.
+which the macros read only for `[package] name` / `description`. Embedded component WIT is
+authoritative: specifying a `wit` override for a package that embeds WIT is an error. The override
+is only a fallback for packages that do not embed WIT.
+
+For a plain Cargo or IDE build with source dependencies, add
+`miden-sdk-build-script-support = "0.14.0"` under `[build-dependencies]` and call
+`miden_sdk_build_script_support::prepare_package_cache()` from `build.rs`; this prepares
+`MIDENC_PACKAGE_CACHE` before macro expansion. `cargo miden build`, a direct `.masp` dependency, or
+an already valid package cache bypasses that requirement.
 
 ## P22: MASM-Side Facts That Bite Rust SDK Developers
 

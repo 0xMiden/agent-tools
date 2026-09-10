@@ -87,7 +87,7 @@ supported-types = ["RegularAccountUpdatableCode"]
 
 `supported-types` also accepts `"RegularAccountImmutableCode"` and the faucet kinds `["FungibleFaucet", "NonFungibleFaucet"]`.
 
-The `Cargo.toml` needs `edition = "2024"`, `crate-type = ["cdylib"]`, and the `miden` dependency. **Pin `miden` with the full pre-release string** — a plain `miden = "0.14"` means `^0.14.0`, which does not match a pre-release and fails to resolve:
+The `Cargo.toml` needs `edition = "2024"`, `crate-type = ["cdylib"]`, and the `miden` dependency. Use the full final-release version to make the intended SDK line explicit. `miden = "0.14.0"` is still a Cargo caret requirement; use `=0.14.0` only when exact resolution is required:
 
 ```toml
 [package]
@@ -102,7 +102,7 @@ crate-type = ["cdylib"]
 miden = "0.14.0"
 ```
 
-Contracts build on the pinned nightly toolchain (`channel = "nightly-2026-04-30"`, `targets = ["wasm32-wasip2"]`); the compiler's MSRV is 1.97.
+Contracts build on the pinned nightly toolchain (`channel = "nightly-2026-09-01"`, `targets = ["wasm32-wasip2"]`); the compiler workspace declares Rust 1.99 as its MSRV.
 
 ### Note Script (`#[note]` / `#[note_script]`)
 Executes when a note is consumed by an account. Can call component methods on the consuming account.
@@ -286,7 +286,21 @@ miden-protocol = "*"
 basic-wallet = { path = "../basic-wallet" }
 ```
 
-The `[dependencies]` entry is all you need. A component's WIT is embedded in its compiled package, and the embedded copy is authoritative.
+A component's WIT is embedded in its compiled package, and the embedded copy is authoritative. `cargo miden build` prepares source dependencies for you. Plain Cargo and IDE builds of a source dependency need the release-matched build helper to populate `MIDENC_PACKAGE_CACHE`:
+
+```toml
+[build-dependencies]
+miden-sdk-build-script-support = "0.14.0"
+```
+
+```rust
+// build.rs
+fn main() {
+    miden_sdk_build_script_support::prepare_package_cache();
+}
+```
+
+Direct `.masp` dependencies and an already valid package cache do not need this helper.
 
 Do **not** add a `[package.metadata.miden.dependencies].<name>.wit` key for such a dependency: when a package embeds WIT and the manifest also sets `wit`, expansion fails with *"embeds component WIT, but miden-project.toml also sets ... remove the `wit` key"* (`sdk/base-macros/src/dependency_package.rs`). The key survives only as a fallback for dependency packages that do **not** embed WIT, for example ones produced by another toolchain. No cross-component example in the compiler ships it.
 
@@ -375,12 +389,12 @@ Note side (`examples/p2id-note/src/lib.rs`): the note declares `#[account(basic_
 - [ ] Every externally-callable trait method carries `#[account_procedure]`, on the **trait**, not the impl
 - [ ] `#[account_procedure]` and `#[auth_script]` are not combined in one component
 - [ ] The `#[account(...)]` wrapper struct name differs from every generated trait name
-- [ ] `edition = "2024"` and `crate-type = ["cdylib"]` in `Cargo.toml`, with the exact pre-release pin `miden = "0.14.0"`
+- [ ] `edition = "2024"` and `crate-type = ["cdylib"]` in `Cargo.toml`, with the full final-release requirement `miden = "0.14.0"`
 - [ ] `[lib]` in `miden-project.toml` has `kind` (`account-component` / `note` / `tx-script`), `namespace`, **and `path`**
 - [ ] `[dependencies]` in `miden-project.toml` carries `miden-core = "*"` and `miden-protocol = "*"`
 - [ ] Typed storage uses `StorageValue<T>` / `StorageMap<K, V>` with `get()` / `set()`; slot names derive from `<package>::<namespace-interface>::<field>`
 - [ ] Notes/tx-scripts that call a component declare an `#[account(package::Interface)]` wrapper and call methods on the injected `account`
-- [ ] Cross-component deps declared in `miden-project.toml` (never `Cargo.toml`) under `[dependencies]`, with no `[package.metadata.miden.dependencies]` `wit` key: embedded WIT is authoritative and a leftover key is an error
+- [ ] Cross-component deps declared in `miden-project.toml` (never `Cargo.toml`) under `[dependencies]`, with no `[package.metadata.miden.dependencies]` `wit` key when embedded WIT is present; plain Cargo and IDE source builds prepare `MIDENC_PACKAGE_CACHE` from `build.rs`
 - [ ] `incr_nonce()` is called only from an authentication procedure; `output_note::create` and the vault operations only from account-component context
 - [ ] Felt arithmetic validated before subtraction (see rust-sdk-pitfalls skill)
 - [ ] Felt comparisons use `.as_canonical_u64()` (see rust-sdk-pitfalls skill)

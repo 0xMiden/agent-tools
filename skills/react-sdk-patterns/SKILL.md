@@ -403,14 +403,15 @@ const { component, txScript, noteScript, isReady } = useCompile();
 Since protocol 0.16 a signed `TransactionSummary` binds the reference block commitment, so a summary signed at one block only reproduces when re-executed at that block. Anchors are what let a multisig proposer, its co-signers and the eventual executor agree despite different sync heights.
 
 ```tsx
+const client = useMidenClient();
 const { captureAnchor, anchor, anchoredRequest, isCapturing, error, reset } = useChainAnchor();
 const { preview, summary, isPreviewing } = usePreview();
 
-const chainAnchor = await captureAnchor({ request: buildRequest });
-// ALWAYS preview/execute against `anchoredRequest`, never the value you passed in:
-// re-resolving a request factory draws a fresh serial number from the client RNG
-// and builds a different transaction than the anchor pins.
-const txSummary = await preview({ accountId, request: anchoredRequest!, anchor: chainAnchor });
+const request = await buildRequest(client);
+const chainAnchor = await captureAnchor({ request });
+// Use the same resolved request for capture and preview. `anchoredRequest` is
+// React state and still has the previous render's value in this callback.
+const txSummary = await preview({ accountId, request, anchor: chainAnchor });
 ```
 
 `preview` produces a summary **only while authorization is pending** — i.e. when the account's auth procedure aborts with the unauthorized event, e.g. a multisig below its signing threshold. A fully authorized transaction produces no summary and the call rejects with `code: "TRANSACTION_ALREADY_AUTHORIZED"`; submit it with `useTransaction` instead. It is not a dry-run confirmation-screen API.
@@ -499,26 +500,32 @@ No signer provider needed. Keys are managed in the browser via IndexedDB.
 ### External Signers
 `MidenProvider` reads the nearest ancestor `SignerContext`; when one is present and connected it builds the client with `WebClient.createClientWithExternalKeystore(...)` instead of the local keystore. Three signer providers are used by the SDK's example app:
 
-- `ParaSignerProvider` from `@miden-sdk/use-miden-para-react`
-- `TurnkeySignerProvider` from `@miden-sdk/miden-turnkey-react`
+- `ParaSignerProvider` from `@miden-sdk/para-react`
+- `TurnkeySignerProvider` from `@miden-sdk/turnkey-react`
 - `MidenFiSignerProvider` from `@miden-sdk/miden-wallet-adapter-react`
 
-All three live in repos outside web-sdk and are not declared in the example's `package.json` dependencies, so confirm names, versions and props against each package's own docs before installing.
+All three are published from the web-sdk monorepo. Keep them on the same v0.16 release line as `@miden-sdk/react` and `@miden-sdk/miden-sdk`.
 
 ### MultiSignerProvider — the shape the example app uses
 For apps offering a choice of signer, wrap everything in `MultiSignerProvider` and mount each signer provider — each containing a `<SignerSlot />` — as a **sibling** of `MidenProvider`:
 
 ```tsx
 import { MidenProvider, MultiSignerProvider, SignerSlot } from "@miden-sdk/react";
+import { ParaSignerProvider } from "@miden-sdk/para-react";
+import { TurnkeySignerProvider } from "@miden-sdk/turnkey-react";
+import { MidenFiSignerProvider } from "@miden-sdk/miden-wallet-adapter-react";
+import { WalletAdapterNetwork } from "@miden-sdk/miden-wallet-adapter-base";
 
 <MultiSignerProvider>
   <ParaSignerProvider apiKey={import.meta.env.VITE_PARA_API_KEY} environment="BETA">
     <SignerSlot />
   </ParaSignerProvider>
-  <TurnkeySignerProvider>
+  <TurnkeySignerProvider
+    config={{ defaultOrganizationId: import.meta.env.VITE_TURNKEY_ORGANIZATION_ID }}
+  >
     <SignerSlot />
   </TurnkeySignerProvider>
-  <MidenFiSignerProvider network="testnet" autoConnect={false}>
+  <MidenFiSignerProvider network={WalletAdapterNetwork.Testnet} autoConnect={false}>
     <SignerSlot />
   </MidenFiSignerProvider>
   <MidenProvider config={{ rpcUrl: "testnet", prover: "testnet" }}>
@@ -616,7 +623,7 @@ await runExclusive(async () => {
 
 ## Non-surface — do not invent these
 
-- **No fee API.** The React SDK exposes no fee configuration, hook, or option. Fees are paid inside the account's auth procedure; nothing in `@miden-sdk/react` names `FeeConversionInfo`, `feeConversionInfo` or `TX_FEE`.
+- **No dedicated React fee hook or provider option.** For a custom request, obtain the underlying client and call its public `feeAwareTransactionRequestBuilder(account)` instance method.
 - **No `AccountDelta` / `AccountPatch` re-export.** The only summary-shaped re-export is `TransactionSummary` (used by `usePreview`).
 - **No protocol `AssetId` / `AssetClass` / `AssetVaultKey`.** Every `assetId` here is a faucet account reference.
 - **Do not treat the package's own `README.md`, `CLAUDE.md` or `ReactSDK.Arena.Findings.md` as authoritative** — they are stale. The README still documents `authScheme: 0`, a `mutable` wallet option, and `storageMode: 'network'`, none of which exist. `src/types/index.ts` plus the hook bodies are the source of truth.

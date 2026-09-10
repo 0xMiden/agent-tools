@@ -75,33 +75,29 @@ When stuck at any stage: search the source repos for a similar working pattern. 
 
 ## Which Version Is Which
 
-The three-way version skew is the most confusing thing about this stack. These are four independent
+The version skew is the most confusing thing about this stack. These are five independent
 release lines:
 
 | Line | Crates | Version | MSRV |
 |---|---|---|---|
-| Contract SDK (guest) | `miden`, `miden-base`, `miden-base-macros`, `miden-base-sys`, `miden-stdlib-sys`, `miden-sdk-alloc` | `0.14.0` | 1.97 + nightly `2026-04-30`, target `wasm32-wasip2` |
-| Compiler / build tool | compiler workspace, `midenc`, `cargo-miden` | `0.10.0` | 1.97 |
+| Contract SDK (guest) | `miden`, `miden-base`, `miden-base-macros`, `miden-base-sys`, `miden-stdlib-sys`, `miden-sdk-alloc` | `0.14.0` | 1.99 + nightly `2026-09-01`, target `wasm32-wasip2` |
+| Compiler / build tool | compiler workspace, `midenc`, `cargo-miden` | `0.10.0` | 1.99 |
 | Protocol | `miden-protocol`, `miden-standards`, `miden-testing`, `miden-tx`, `miden-tx-batch`, `miden-block-prover`, `miden-agglayer` | `0.16.0-rc.9` | 1.96.1 |
 | Client | `miden-client` | `0.16.0-rc.5` | 1.96 |
 | VM | `miden-assembly`, `miden-assembly-syntax`, `miden-core`, `miden-core-lib`, `miden-crypto`, `miden-mast-package`, `miden-processor`, `miden-project`, `miden-prover` | `0.29.1` | 1.96.1 |
 
-**Always write full pre-release strings.** Cargo's `^` requirement never matches a pre-release, so
-`miden = "0.14"`, `cargo-miden = "0.10"` and `miden-protocol = "0.16"` all fail to resolve. Write
+**Distinguish final and prerelease requirements.** `miden = "0.14.0"` is a caret-compatible
+final-release requirement, not an exact pin; use `=0.14.0` only when exact resolution is required.
+To select an RC, the requirement itself must name that prerelease. Write
 `miden = "0.14.0"`, `cargo-miden = "0.10.0"`, `miden-protocol = "0.16.0-rc.9"`,
 `miden-standards = "0.16.0-rc.9"`, `miden-testing = "0.16.0-rc.9"`,
 `miden-client = "0.16.0-rc.5"`, VM crates `"0.29.1"`.
 
-**Accepted skew, and the one thing it breaks.** The compiler workspace builds against
-`miden-protocol = "=0.16.0-alpha.4"` and VM `0.25`, deliberately lagging the rest of the 0.16 line.
-That is expected. The consequence is that **a single Cargo graph cannot hold both `cargo-miden
-0.10.0` and `miden-client 0.16.0-rc.5`**: `cargo-miden` pulls `miden-protocol =0.16.0-alpha.4`
-(exact) through `midenc-compile` → `midenc-session`, while `miden-client 0.16.0-rc.5` requires
-`miden-protocol 0.16.0-rc.9`. Both requirements land in the same `0.16` compatibility range, so
-Cargo must select one version and cannot satisfy both. Keep the build tool and the client in
-separate crates, or pin the whole stack to the alpha line the way the compiler's own
-`compiler/tests/integration-network/Cargo.toml` does (`miden-client = "0.16.0-alpha.1"`,
-`miden-testing = "0.16.0-alpha.2"`, workspace `miden-protocol = "=0.16.0-alpha.4"`).
+**Expected internal skew.** At `sdk/v0.14.0`, the compiler workspace pins
+`miden-protocol` and `miden-standards` to `=0.16.0-rc.4` and uses the VM `0.29` line. Consumer-facing
+protocol/client examples in this guide use the later compatible RC pins listed above. Keep these
+roles distinct when comparing manifests; do not copy the compiler workspace's internal pins into a
+client application without checking that application's dependency graph.
 
 ---
 

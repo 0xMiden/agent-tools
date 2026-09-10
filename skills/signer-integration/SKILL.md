@@ -6,8 +6,14 @@ description: Guide to integrating external signers (Para, Turnkey, MidenFi walle
 # Miden Signer Integration
 
 ```json
-"@miden-sdk/react": "0.16.0-rc.7",
-"@miden-sdk/miden-sdk": "0.16.0-rc.7"
+{
+  "@miden-sdk/react": "0.16.0-rc.7",
+  "@miden-sdk/miden-sdk": "0.16.0-rc.7",
+  "@miden-sdk/para-react": "0.16.0-rc.7",
+  "@miden-sdk/turnkey-react": "0.16.0-rc.7",
+  "@miden-sdk/miden-wallet-adapter-react": "0.16.0-rc.7",
+  "@miden-sdk/miden-wallet-adapter-base": "0.16.0-rc.7"
+}
 ```
 
 ## Overview
@@ -30,12 +36,13 @@ When a signer context is present, the IndexedDB name becomes `` `MidenClientDB_$
 
 ## Pre-Built Signer Providers
 
-These three packages live in repos **outside** web-sdk and are not declared in the SDK example's `package.json`. Only their import specifiers and the props the example actually passes can be confirmed from the SDK; check each package's own documentation for its full prop set, exported hooks and version.
+These packages are published from the web-sdk monorepo. Keep them on the same v0.16 release line as the React and web-client packages.
 
 ```tsx
-import { ParaSignerProvider } from "@miden-sdk/use-miden-para-react";
-import { TurnkeySignerProvider } from "@miden-sdk/miden-turnkey-react";
+import { ParaSignerProvider } from "@miden-sdk/para-react";
+import { TurnkeySignerProvider } from "@miden-sdk/turnkey-react";
 import { MidenFiSignerProvider } from "@miden-sdk/miden-wallet-adapter-react";
+import { WalletAdapterNetwork } from "@miden-sdk/miden-wallet-adapter-base";
 ```
 
 What the SDK's example app demonstrates:
@@ -44,17 +51,17 @@ What the SDK's example app demonstrates:
 // Para (EVM wallets)
 <ParaSignerProvider apiKey={import.meta.env.VITE_PARA_API_KEY} environment="BETA"> ... </ParaSignerProvider>
 
-// Turnkey (passkey authentication) — mounted with no props
-<TurnkeySignerProvider> ... </TurnkeySignerProvider>
+// Turnkey (passkey authentication)
+<TurnkeySignerProvider config={{ defaultOrganizationId: organizationId }}> ... </TurnkeySignerProvider>
 
-// MidenFi wallet (browser extension) — `network` is a plain string
-<MidenFiSignerProvider network="testnet" autoConnect={false}> ... </MidenFiSignerProvider>
+// MidenFi wallet (browser extension)
+<MidenFiSignerProvider network={WalletAdapterNetwork.Testnet} autoConnect={false}> ... </MidenFiSignerProvider>
 ```
 
 Notes on things agents commonly get wrong here:
 
-- `MidenFiSignerProvider`'s `network` prop takes a **plain string** (`"testnet"`). There is no `WalletAdapterNetwork` enum and no `@miden-sdk/miden-wallet-adapter-base` package anywhere in the SDK.
-- There is no `useMidenFiWallet` hook and no `WalletReadyState` enum in the SDK. To gate a connect button on extension availability, use the SDK's own primitive, `waitForWalletDetection` (below).
+- `MidenFiSignerProvider`'s `network` prop takes `WalletAdapterNetwork`; use `WalletAdapterNetwork.Testnet` for this guide's Testnet configuration.
+- `useMidenFiWallet` is exported by `@miden-sdk/miden-wallet-adapter-react`, and `WalletReadyState` by the base package. The generic React SDK primitive `waitForWalletDetection` below remains useful for adapter-agnostic UI and tests.
 
 ## Wallet-extension detection
 
@@ -77,15 +84,16 @@ Wrap everything in `MultiSignerProvider` and mount each signer provider — each
 
 ```tsx
 import { MidenProvider, MultiSignerProvider, SignerSlot, useMultiSigner } from "@miden-sdk/react";
+import { WalletAdapterNetwork } from "@miden-sdk/miden-wallet-adapter-base";
 
 <MultiSignerProvider>
   <ParaSignerProvider apiKey={apiKey} environment="BETA">
     <SignerSlot />
   </ParaSignerProvider>
-  <TurnkeySignerProvider>
+  <TurnkeySignerProvider config={{ defaultOrganizationId: organizationId }}>
     <SignerSlot />
   </TurnkeySignerProvider>
-  <MidenFiSignerProvider network="testnet" autoConnect={false}>
+  <MidenFiSignerProvider network={WalletAdapterNetwork.Testnet} autoConnect={false}>
     <SignerSlot />
   </MidenFiSignerProvider>
   <MidenProvider config={{ rpcUrl: "testnet", prover: "testnet" }}>

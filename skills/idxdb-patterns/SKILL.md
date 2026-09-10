@@ -234,6 +234,24 @@ this.dexie
   .version(2)
   .stores({})
   .upgrade(async (tx) => { /* prune leaked note tags */ });
+
+// v3: replace the input-note consumption index's noteId suffix with detailsCommitment.
+this.dexie.version(3).stores({
+  [Table.InputNotes]: indexes(
+    "detailsCommitment",
+    "noteId",
+    "nullifier",
+    "scriptRoot",
+    "stateDiscriminant",
+    "[consumedBlockHeight+consumedTxOrder+detailsCommitment]"
+  ),
+});
+
+// v4/v5: replace settings so it can use the new compound primary key.
+this.dexie.version(4).stores({ [Table.Settings]: null });
+this.dexie.version(5).stores({
+  [Table.Settings]: indexes("[scope+key]", "scope"),
+});
 ```
 
 `V1_STORES` is the **frozen** baseline. Its in-file comment says exactly:
@@ -482,8 +500,9 @@ const notes = await db.inputNotes
   .toArray();
 ```
 
-The `InputNotes` index string is
-`"detailsCommitment,noteId,nullifier,scriptRoot,stateDiscriminant,[consumedBlockHeight+consumedTxOrder+noteId]"`.
+The current `InputNotes` index string is
+`"detailsCommitment,noteId,nullifier,scriptRoot,stateDiscriminant,[consumedBlockHeight+consumedTxOrder+detailsCommitment]"`.
+The `noteId` form remains only in the intentionally frozen v1 baseline; Dexie v3 replaces it.
 
 For compound indexes, use the **bracket-string** index name and pass the
 key parts as an array to `.equals(...)` (from `applyAccountPatch` in
