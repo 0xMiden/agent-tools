@@ -42,17 +42,23 @@ function Raw() {
   return null;
 }
 
-// CORRECT — let the provider hold the tree back
+// CORRECT — gate the subtree that calls useMidenClient()
+function RawClientGate() {
+  const { isReady } = useMiden();
+  if (!isReady) return <p>Loading...</p>;
+  return <Raw />;
+}
+
 <MidenProvider
   config={{ rpcUrl: "testnet" }}
   loadingComponent={<p>Loading WASM...</p>}
   errorComponent={(err) => <p>Init failed: {err.message}</p>}
 >
-  <App />
+  <RawClientGate />
 </MidenProvider>
 
 // CORRECT — gate explicitly where you need finer control
-function App() {
+function ReadyApp() {
   const { isReady, isInitializing, error } = useMiden();
   if (error) return <p>{error.message}</p>;
   if (!isReady || isInitializing) return <p>Loading...</p>;
@@ -60,7 +66,7 @@ function App() {
 }
 ```
 
-`loadingComponent` is rendered **only while `isInitializing` is true** and `errorComponent` **only when init failed** — if you pass neither, the provider renders children immediately and you are responsible for the `isReady` gate.
+`loadingComponent` is rendered **only while `isInitializing` is true**, which starts inside the provider's initialization effect. The initial store state has `isInitializing: false`, so the first render reaches the children even when `loadingComponent` is supplied. Treat the loader as presentation, not a readiness boundary: explicitly gate every subtree that calls `useMidenClient()` on `isReady`. `errorComponent` is rendered only when initialization fails.
 
 Source: `packages/react-sdk/src/context/MidenProvider.tsx`, `packages/react-sdk/src/hooks/useAccounts.ts`.
 

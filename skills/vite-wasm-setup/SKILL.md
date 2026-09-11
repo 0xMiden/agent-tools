@@ -184,10 +184,13 @@ Notes:
   local `package.json` version is not already on npm), so it can drift between
   releases. Always defer to your app's `package.json` rather than assuming
   `vite-plugin === miden-sdk`.
-- **The wallet adapter lives in a separate repo.** The example app imports
-  `MidenFiSignerProvider` from `@miden-sdk/miden-wallet-adapter-react`, which is
-  published from [`0xMiden/miden-wallet-adapter`](https://github.com/0xMiden/miden-wallet-adapter),
-  not the web-sdk repo. Confirm its version against that repo or your app's
+- **The wallet adapter is published from the web-sdk monorepo.** The example app
+  imports `MidenFiSignerProvider` from
+  `@miden-sdk/miden-wallet-adapter-react`, whose package source is
+  [`packages/adapter/react`](https://github.com/0xMiden/web-sdk/tree/v0.16.0-rc.7/packages/adapter/react)
+  in `0xMiden/web-sdk`.
+  Keep it on the same v0.16 release line as the React and web-client packages,
+  and confirm its version against that package manifest or your app's
   `package.json`.
 - **When you bump, do a clean install with the package manager the project
   actually uses.** The web-sdk itself is pnpm-only (`rm -rf node_modules
