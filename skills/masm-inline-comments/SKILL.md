@@ -13,10 +13,8 @@ Inline comments (single `#`) should begin with a lowercase letter.
 
 ```masm
 # good: lowercase start
-# remove the asset from the account
 exec.native_account::remove_asset
-dropw
-# => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+# => [FINAL_ASSET_VALUE, note_idx, pad(11)]
 
 # Bad: uppercase start (avoid)
 # Remove the asset from the account
@@ -33,7 +31,7 @@ Only apply this rule to new code you write. Do not remove comments that are pres
 - Standard control flow: `if.true`, `while.true`, `end`
 
 **Do comment:**
-- Stack state after complex operations: `# => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]`
+- Stack state after complex operations: `# => [ptr, ASSET_ID, ASSET_VALUE, end_ptr]`
 - Purpose of a code block: `# compute the pointer at which we should stop iterating`
 - Non-obvious logic or business rules
 - TODO items and references to external specs
@@ -43,7 +41,7 @@ Only apply this rule to new code you write. Do not remove comments that are pres
 Insert a blank line after a `# => [...]` stack-state tracker, except when the next non-blank line is one of:
 
 - `end` (proc / `while.true` / `if.true` / `repeat.N` closing).
-- A control-flow keyword such as `else` (note: `else` is always bare; a false-conditioned branch uses `if.false`, not an `else.*` suffix).
+- A control-flow keyword such as `else`, `else.true`, or `else.false`.
 - Another `# =>` line that continues the same multi-line stack state.
 - A `#` continuation comment that explains the tracker.
 
@@ -52,13 +50,16 @@ This pairs each stack state visually with the operation that produced it and let
 **Good:**
 
 ```masm
-dupw.1 dupw.1
-# => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+# => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
-# remove the asset from the account
+dupw.1 dupw.1
+# => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
 exec.native_account::remove_asset
+# => [FINAL_ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
 dropw
-# => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+# => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 ```
 
 **Also OK (no blank line before `end` or control flow):**
@@ -68,18 +69,87 @@ dropw
 end
 ```
 
+### 4. Match the doc block
+
+An inline `# => [...]` tracker uses the same item names, capitalization, and `(N)` span notation as the `#!` doc block for the enclosing procedure (see masm-doc-comments skill):
+
+- Single-felt names stay lowercase: `note_idx`, `final_nonce`.
+- Word names stay UPPERCASE: `ASSET_ID`, `ASSET_VALUE`, `RECIPIENT`.
+- `(N)` spans stay lowercase: `pad(12)`, `foreign_procedure_inputs(15)`.
+
+Composite names like `account_id_{suffix,prefix}` are a doc-block shorthand for a group of felts. In inline trackers they decompose into their individual felts since each felt occupies one stack slot:
+
+```masm
+#! Inputs:  [account_id_{suffix,prefix}, amount]
+pub proc transfer
+    # => [account_id_suffix, account_id_prefix, amount]
+    ...
+end
+```
+
+### 5. Reuse existing terminology
+
+Use the vocabulary already established in the surrounding code and doc comments. Do not coin new terms or colloquialisms for a concept that already has a name — a value written to a local is "stored", not "stashed". This applies to inline comments and to constant-header comments.
+
+### 6. Comment the code, not the change or the design
+
+Inline comments explain what the code does for a future reader, not why a particular PR made a change. Avoid PR narrative and framing such as "this is the X that prevents Y"; describe the operation and its purpose as the code stands.
+
+An inline comment states, in one line, what the next instruction block does or which invariant it relies on. It does not:
+
+- explain why the design is the way it is, or which alternatives were rejected
+- restate reasoning from a PR review or from the procedure's `#!` doc comment
+- justify the ordering of steps with rationale; that belongs in the doc comment (see masm-doc-comments skill)
+
+**Avoid (implementation detail and rationale in an inline comment):**
+
+```masm
+# one slot beyond the approvers, for the guardian signature. It is unconditional because the
+# rotation path verifies no guardian signature but scans every account procedure instead, which
+# the slot also covers.
+add.1
+
+# settle the sponsorship obligation first, in pay_fee's order; the bound below guards the
+# host-supplied rate, which the sponsorship amounts do not depend on
+exec.fees::create_network_note_sponsorships drop
+```
+
+**Good:**
+
+```masm
+# one slot beyond the approvers, for the guardian signature
+add.1
+
+# settle the sponsorship obligation
+exec.fees::create_network_note_sponsorships drop
+```
+
+### 7. Accessing a word's individual elements
+
+When accessing individual elements of a word, show the word destructured into elements, grouped with brackets, e.g.:
+
+```
+# => [ASSET_ID, ASSET_VALUE]
+# => [[asset_class_suffix, asset_class_prefix, faucet_id_suffix_and_metadata, faucet_id_prefix], ASSET_VALUE]
+
+dup
+# => [asset_class_suffix, ASSET_ID, ASSET_VALUE]
+```
+
 ## Examples
 
 **Good:**
 
 ```masm
+# preserve the asset before removing it from the account
 dupw.1 dupw.1
-# => [ASSET_KEY, ASSET_VALUE, ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+# => [ASSET_ID, ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
-# remove the asset from the account
 exec.native_account::remove_asset
+# => [FINAL_ASSET_VALUE, ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
+
 dropw
-# => [ASSET_KEY, ASSET_VALUE, note_idx, pad(7)]
+# => [ASSET_ID, ASSET_VALUE, note_idx, pad(7)]
 
 exec.output_note::add_asset
 # => [pad(16)]

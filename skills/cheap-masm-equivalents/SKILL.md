@@ -1,6 +1,6 @@
 ---
 name: cheap-masm-equivalents
-description: Use when writing or reviewing MASM hot paths — prefer the cheaper equivalent instruction: `neq.0` over `push.0 gt` for non-zero checks, `cdrop` over an `if/else` selecting between two values, `dup.N` over `loc_load` for a value still on the stack, `eqw` over hand-rolled element-wise word comparison, `u32gt`/`u32lt` over generic `gt`/`lt` on known-u32 operands.
+description: Use when writing or reviewing MASM hot paths or loops — prefer the cheaper equivalent: loop counters and pointers on the operand stack instead of procedure locals, `neq.0` over `push.0 gt` for non-zero checks, `cdrop` over an `if/else` selecting between two values, `dup.N` over `loc_load` for a value still on the stack, `eqw` over hand-rolled element-wise word comparison, `u32gt`/`u32lt` over generic `gt`/`lt` on known-u32 operands.
 ---
 
 # Prefer Cheap MASM Equivalents
@@ -9,44 +9,71 @@ description: Use when writing or reviewing MASM hot paths — prefer the cheaper
 
 Several MASM idioms have a cheap and an expensive form. Use the cheap one when both produce the same result on the inputs the procedure can see:
 
-- Non-zero check: `neq.0` (2 cycles) over a comparison-based check like `push.0 gt` (~17 cycles). `neq.0` lowers to `eqz not`; `push.0 gt` does a full field comparison just to learn "not zero".
-- Selecting between two values on a flag: `cdrop` (2 cycles) over an `if.true ... else ... end` branch with the same effect.
-- Re-fetch a recently-pushed value: `dup.N` (1-3 cycles) over `loc_load.N` (which costs more) when the value is still on the stack.
-- Whole-word equality: the single `eqw` instruction (15 cycles) over a hand-rolled element-wise sequence of `eq`/`and`.
-- u32-known operands: `u32lt` (3 cycles) / `u32gt` (4 cycles) over generic `lt` (17 cycles) / `gt` (16 cycles).
+- Loop variables (counters, pointers, indices): keep them on the operand stack across iterations instead of in procedure locals. See below.
+- Non-zero check: `neq.0` (3 cycles) over `gt.0` (16 cycles).
+- Selecting between two values on a flag: `cdrop` over an `if.true ... else ... end` branch with the same effect.
+- Re-fetch a recently-pushed value: `dup.N` over `loc_load.N` when the value is still on the stack.
+- Whole-word equality: `eqw` over element-wise comparisons.
+- u32-known operands: `u32gt`/`u32lt` over generic `gt`/`lt`.
 
-Don't apply the cheap form when the operands violate its precondition. `u32lt`/`u32gt` are undefined if either operand is >= 2^32, so the operands must be known (or asserted) to be valid u32s first.
-
-Also note that `gt.0` is only sugar for `push.0 gt`: it parses, but tests `a > 0` via a full field comparison, not `a != 0`. For a genuine non-zero check use `neq.0`; reach for `push.0 gt` / `gt.0` only when you actually want strictly-greater-than-zero.
+Don't apply the cheap form when the operands violate its precondition (e.g. `u32gt` on a value that might exceed `u32::MAX`).
 
 ## Why
 
-MASM cycle costs are not uniform — `gt`/`lt` do full 64-bit comparison work that `neq` skips, so a hot path using the expensive form pays for it on every call. The swaps are semantically equivalent under their preconditions, so the saving is free. The protocol does this in practice: a loop in `account_delta.masm` carries the comment `# we use neq instead of lt for efficiency`. The Miden assembly docs make the same point for branches: an `if.true ... else ... end` incurs non-negligible overhead, so when both branches just select a value (no incompatible side effects), compute both and select with `cdrop`.
+MASM cycle costs are not uniform — `gt.0` does signed-comparison work that `neq.0` skips, so a hot path using the expensive form pays for it on every call. The swaps are semantically equivalent under their preconditions, so the saving is free.
 
 ## Examples
 
 ```masm
-# Good: non-zero check, 2 cycles (lowers to `eqz not`)
+# Good
+push.0 neq          # non-zero check, 3 cycles
+# or simply
 neq.0
 
-# Bad: full field comparison just to test "not zero", ~17 cycles
-push.0 gt
+# Bad
+push.0 gt           # same answer, 16 cycles
 ```
 
 ```masm
-# Good: cdrop for ternary selection (condition on TOP), 2 cycles
-# stack: [cond, b, a]
+# Good: cdrop for ternary selection
+# stack: [c, b, a]
 cdrop
-# stack: [b if cond else a]   (cond=1 keeps b, cond=0 keeps a; fails if cond > 1)
+# stack: [b if c = 1 else a]
 
-# Bad: branchy equivalent for the same condition-on-top layout
-# stack: [cond, b, a]
+# Bad: branchy equivalent
 if.true
-    swap drop   # cond true: keep b
+    swap drop # drop a, keep b
 else
-    drop        # cond false: keep a
+    drop      # drop b, keep a
 end
-# stack: [b if cond else a]
 ```
 
-Note on `cdrop` stack order: the condition is consumed from the top of the stack and `b` (the value just below it) is kept when the condition is 1, `a` when it is 0. `cdrop` fails if the condition is > 1. `if.true`/`if.false` likewise pop their condition from the top of the stack.
+## Loop Variables Belong on the Stack
+
+A procedure local is not a register: `loc_load.i` costs 5 cycles and `loc_store.i` costs 6. Reaching the same value on the stack
+with `dup.n`, `swap`, `movup.n` or `movdn.n` (usually) costs 1 cycle. So a loop that keeps its counter and pointer in locals pays 5-11 cycles per access, per iteration, for data the stack could hold for 1.
+
+Read once, mutate in place:
+
+```masm
+# Good: item_ptr lives on the stack next to the loop counter
+# => [items_left, item_ptr, ...]
+# 1 cycle: read the pointer
+dup.1
+# ... use it ...
+# 4 cycles: advance it
+swap add.ITEM_NUM_ELEMENTS swap
+sub.1 dup neq.0
+
+# Bad: same loop through a local
+# 5 cycles
+loc_load.ITEM_PTR_LOC
+# ... use it ...
+# 13 cycles
+loc_load.ITEM_PTR_LOC add.ITEM_NUM_ELEMENTS loc_store.ITEM_PTR_LOC
+sub.1 dup neq.0
+```
+
+### Working around `call`
+
+The reason to reach for a local is a `call`: the callee takes the top 16 elements, so while those 16 slots are being filled, nothing below them is addressable by `dup.n`. Values that only have to *survive* the call are fine on the stack - they sit in the overflow and come back untouched. Only a value that must be re-read *while* the frame is being built has to live in a local, and even then it is one local, not one per loop variable.

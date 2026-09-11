@@ -30,7 +30,7 @@ Readers retrieve the entry by recomputing the same hash from data they already t
 
 ### 3. Missing advice is an error
 
-A missing advice-map entry, an empty advice stack, or an absent required value is an error — not a default. `adv.push_mapval` / `adv.push_mapvaln` already abort execution when the key is missing (the VM returns `MapKeyNotFound`), so don't paper over it with a fallback. When you branch on presence yourself, surface the failure with `assert.err=ERR_...`. Don't substitute zero / empty / a fallback and continue.
+A missing advice-map entry, an empty advice stack, or an absent required value is an error — not a default. Surface it with `assert.err=ERR_...`. Don't substitute zero / empty / a fallback and continue.
 
 ## Why
 
@@ -45,29 +45,23 @@ Advice data is tied to a commitment by piping it into memory. There are two mech
 `adv_pipe`, `adv_loadw`, and `mem::pipe_double_words_to_memory` copy advice data into memory but do *not* check it against any commitment. Hash the loaded region with Poseidon2 yourself and assert it equals a commitment the kernel already trusts.
 
 ```masm
-# Good: pipe words while hashing, then assert against a trusted commitment.
-# This is the input-note-assets path from the transaction prologue:
-# pipe_double_words_to_memory runs `adv_pipe exec.poseidon2::permute` internally
-# (no commitment check of its own), then you squeeze and assert.
+# Good: pipe words while hashing, then assert against the trusted commitment
+# (permute rounds abbreviated; the real path pipes the full region before squeezing)
+exec.poseidon2::init_no_padding
+adv_pipe exec.poseidon2::permute
+# ... one permute per piped block ...
+exec.poseidon2::squeeze_digest
+# => [COMPUTED_COMMITMENT, ...]
+exec.memory::get_ref_block_commitment
+assert_eqw.err=ERR_PROLOGUE_GLOBAL_INPUTS_PROVIDED_DO_NOT_MATCH_BLOCK_COMMITMENT
+
+# Good: pipe double words while hashing, then assert against the provided commitment
 exec.poseidon2::init_no_padding
 exec.mem::pipe_double_words_to_memory
 exec.poseidon2::squeeze_digest
 # => [COMPUTED_ASSETS_COMMITMENT, ...]
 exec.memory::get_input_note_assets_commitment
 assert_eqw.err=ERR_PROLOGUE_PROVIDED_INPUT_ASSETS_INFO_DOES_NOT_MATCH_ITS_COMMITMENT
-
-# Good: drive the adv_pipe + permute loop yourself, squeeze, then assert.
-# (The block-data prologue squeezes a SUB_COMMITMENT here, merges it with the
-#  trusted NOTE_ROOT to form the block commitment, and only THEN asserts — i.e.
-#  the squeezed digest is combined with trusted data before the equality check.)
-exec.poseidon2::init_no_padding
-adv_pipe exec.poseidon2::permute
-# ... one `adv_pipe exec.poseidon2::permute` per piped block ...
-exec.poseidon2::squeeze_digest
-# => [SUB_COMMITMENT, ...]  (combine with trusted data as needed, e.g. merge a root)
-# ... eventually ...
-exec.memory::get_block_commitment
-assert_eqw.err=ERR_PROLOGUE_GLOBAL_INPUTS_PROVIDED_DO_NOT_MATCH_BLOCK_COMMITMENT
 
 # Bad: pipe advice into memory and use it without the hash/assert step
 adv_pipe
@@ -87,28 +81,24 @@ exec.mem::pipe_preimage_to_memory
 
 ### Content-addressed keys and missing entries
 
-An advice-map key is a full word (4 felts) sitting on top of the operand stack. `adv.push_mapval` reads that word as the key and pushes the looked-up value onto the *advice* stack (the operand stack is unchanged), so you typically follow it with `adv_loadw` or a pipe to bring the value into the operand stack or memory.
+Illustrative fragments (with the key already on the operand stack):
 
 ```masm
 # Good: key the advice map entry by the commitment itself
-# (NOTE_DATA_COMMITMENT is the trusted word already on the operand-stack top)
-adv.push_mapval          # value pushed onto the advice stack, keyed by the commitment word
-adv_loadw                # => [NOTE_DATA, ...]  pull the value into the operand stack
-
-# Bad: hard-coded magic key (a key is a Word — 4 felts — and this one is meaningless)
-push.0x0001.0x0000.0x0000.0x1234
+push.NOTE_DATA_COMMITMENT
 adv.push_mapval
 
-# Good: a missing required entry is an error.
-# adv.has_mapkey pushes the presence flag onto the ADVICE stack, so move it to the
-# operand stack with adv_push before asserting.
-# stack: [KEY, ...]
-adv.has_mapkey           # advice stack: [has_key, ...]; operand stack unchanged
-adv_push                 # => [has_key, KEY, ...]
+# Bad: hard-coded magic key
+push.0x1234_5678_0000_0001
+adv.push_mapval
+
+# Good: move the advice-stack presence flag before asserting it
+adv.has_mapkey
+adv_push
 assert.err=ERR_MISSING_REQUIRED_ADVICE
 
-# (adv.push_mapval itself already aborts with MapKeyNotFound on an absent key —
-#  never assume it returns zero and continue.)
+# A direct lookup also errors if the key is absent; it never substitutes a default
+adv.push_mapval
 ```
 
-The Rust analog is to return `Err` on bad or missing external input rather than panicking or silently defaulting.
+For the Rust analog (returning `Err` on bad/missing external input rather than panicking or defaulting), see `return-error-not-panic`.
