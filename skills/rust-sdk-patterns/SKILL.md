@@ -1,6 +1,6 @@
 ---
 name: rust-sdk-patterns
-description: Complete guide to writing Miden smart contracts with the Rust SDK. Covers the three-part #[component_storage]/#[component] account-component pattern, #[note]/#[note_script] notes, #[tx_script] scripts, the #[account(...)] wrapper, storage patterns, native functions, asset handling, cross-component calls, P2ID note creation, and asset receiving via component methods. Use when writing, editing, or reviewing Miden Rust contract code.
+description: Complete guide to writing Miden smart contracts with the Rust SDK. Covers the three-part #[component_storage]/#[component] account-component pattern, the #[account_procedure] interface marker, #[note]/#[note_script] notes, #[tx_script] scripts, the #[account(...)] wrapper and its generated traits, storage patterns, native functions, asset handling, cross-component calls, P2ID note creation, and asset receiving via component methods. Use when writing, editing, or reviewing Miden Rust contract code.
 ---
 
 # Miden Rust SDK Patterns
@@ -33,7 +33,9 @@ struct BankStorage {
 
 #[component]
 trait Bank {
+    #[account_procedure]
     fn initialize(&mut self);
+    #[account_procedure]
     fn deposit(&mut self, depositor: AccountId, deposit_asset: Asset);
 }
 
@@ -46,9 +48,61 @@ impl Bank for BankStorage {
 
 Only the trait's methods are exported to WIT. Inherent (`impl BankStorage`) methods stay private to the contract — use them for helpers like key derivation.
 
-See [miden-bank bank-account](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/bank-account/src/lib.rs) for a complete working example demonstrating the three-part pattern, typed `StorageValue<Word>` / `StorageMap<Word, Felt>`, `get()`/`set()`, felt arithmetic, and private inherent helpers.
+Reference: `examples/basic-wallet/src/lib.rs` and `examples/counter-contract/src/lib.rs` in the compiler repo.
 
-**Project metadata for accounts:** See `contracts/bank-account/miden-project.toml` in [miden-bank](https://github.com/0xMiden/tutorials/tree/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/bank-account) for the `[lib] kind = "account-component"`, the `namespace`, and the `supported-types`. The `Cargo.toml` only needs `crate-type = ["cdylib"]` and the `miden` dependency.
+### `#[account_procedure]`: being exported is not the same as being callable
+
+A component's methods are **not** implicitly part of the account interface. Mark every method that must be reachable from a transaction script, a note script, foreign procedure invocation (FPI), or a sibling component with `#[account_procedure]`.
+
+Three rules that catch people out:
+
+- **It goes on the `#[component]` trait declaration, not on the impl block.** Putting it on the impl does nothing.
+- **An unmarked method still compiles and is still exported by the package** — it simply is not an account procedure. There is no error at build time; the call site fails later.
+- **`#[account_procedure]` and `#[auth_script]` cannot be combined in one component.** They belong to different component kinds: an ordinary account component versus an authentication component. An authentication component uses `#[auth_script]` alone, and its single method is the interface implicitly.
+
+`#[account_procedure]` needs no import — the enclosing `#[component]` macro recognises it, exactly as it does `#[auth_script]`.
+
+Any number of methods may be marked.
+
+**Project metadata for accounts:** `[lib]` needs `kind`, `namespace`, and an explicit `path`; `[dependencies]` needs `miden-core` and `miden-protocol`:
+
+```toml
+# miden-project.toml
+[package]
+name = "basic-wallet"
+version = "0.1.0"
+
+[lib]
+kind = "account-component"
+namespace = "miden:basic-wallet/basic-wallet@0.1.0"
+path = "src/lib.rs"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+
+[package.metadata.miden]
+supported-types = ["RegularAccountUpdatableCode"]
+```
+
+`supported-types` also accepts `"RegularAccountImmutableCode"` and the faucet kinds `["FungibleFaucet", "NonFungibleFaucet"]`.
+
+The `Cargo.toml` needs `edition = "2024"`, `crate-type = ["cdylib"]`, and the `miden` dependency. Use the full final-release version to make the intended SDK line explicit. `miden = "0.14.0"` is still a Cargo caret requirement; use `=0.14.0` only when exact resolution is required:
+
+```toml
+[package]
+name = "basic_wallet"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = "0.14.0"
+```
+
+Contracts build on the pinned nightly toolchain (`channel = "nightly-2026-09-01"`, `targets = ["wasm32-wasip2"]`); the compiler workspace declares Rust 1.99 as its MSRV.
 
 ### Note Script (`#[note]` / `#[note_script]`)
 Executes when a note is consumed by an account. Can call component methods on the consuming account.
@@ -58,31 +112,38 @@ A note is two parts: a `#[note]` struct (the note inputs type) and a `#[note]` `
 ```rust
 #![no_std]
 #![feature(alloc_error_handler)]
-use miden::*;
 
-// The native (active) account this note runs against: exposes the
-// bank-account `Bank` component's methods on the wrapper.
-#[account(bank_account::Bank)]
+use miden::{AccountId, Word, account, active_note, note};
+
+/// Native account of the note: exposes the `basic-wallet` component's methods.
+#[account(basic_wallet::BasicWallet)]
 pub struct Wallet;
 
 #[note]
-struct DepositNote;
+struct P2idNote {
+    target_account_id: AccountId,
+}
 
 #[note]
-impl DepositNote {
+impl P2idNote {
     #[note_script]
-    fn run(self, _arg: Word, account: &mut Wallet) {
-        let depositor = active_note::get_sender();
-        for asset in active_note::get_assets() {
-            account.deposit(depositor, asset);
+    pub fn script(self, _arg: Word, account: &mut Wallet) {
+        let current_account = account.get_id();
+        assert_eq!(current_account, self.target_account_id);
+
+        let assets = active_note::get_initial_assets();
+        for asset in assets {
+            account.receive_asset(asset);
         }
     }
 }
 ```
 
-See [miden-bank deposit-note](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/deposit-note/src/lib.rs) for a working example demonstrating `#[note]`, `#[note_script]`, the `#[account(...)]` wrapper, and a cross-component call.
+A `#[note]` struct with fields is auto-decoded from `active_note::get_storage()`. The decoder is strict: it calls `ensure_eof()`, so surplus felts in the note's storage fail with `FeltReprError::TrailingData`. A zero-sized note type skips `get_storage()` entirely.
 
-**Project metadata for notes:** See `contracts/deposit-note/miden-project.toml` in [miden-bank](https://github.com/0xMiden/tutorials/tree/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/deposit-note) for `[lib] kind = "note"`, the `namespace`, the path dependency on the called component, and the cross-component `[package.metadata.miden.dependencies]` WIT entry.
+Reference: `examples/p2id-note/src/lib.rs`, `examples/p2ide-note/src/lib.rs`, `examples/counter-note/src/lib.rs`.
+
+**Project metadata for notes:** `[lib] kind = "note"`, plus `namespace` and `path`. Conventional namespace shape is `miden:<pkg>/miden-<pkg>@0.1.0`.
 
 ### Transaction Script (`#[tx_script]`)
 One-off logic executed in the context of an account. Used for initialization, admin operations, etc.
@@ -94,7 +155,6 @@ One-off logic executed in the context of an account. Used for initialization, ad
 #![feature(alloc_error_handler)]
 use miden::*;
 
-// The account this tx-script runs against: the bank-account `Bank` component.
 #[account(bank_account::Bank)]
 pub struct Wallet;
 
@@ -104,9 +164,23 @@ fn run(_arg: Word, account: &mut Wallet) {
 }
 ```
 
-See [miden-bank init-tx-script](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/init-tx-script/src/lib.rs) for the working example.
+Reference: `examples/basic-wallet-tx-script/src/lib.rs`.
 
-**Project metadata for tx scripts:** Like a note, but `[lib] kind = "tx-script"` and `namespace = "miden:base/transaction-script@1.0.0"`. See `contracts/init-tx-script/miden-project.toml` in [miden-bank](https://github.com/0xMiden/tutorials/tree/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/init-tx-script).
+**Project metadata for tx scripts:** like a note, but `[lib] kind = "tx-script"` and `namespace = "miden:base/transaction-script@1.0.0"`, plus `path = "src/lib.rs"`.
+
+## `#[account(...)]` generates one trait per interface
+
+`#[account(pkg::Interface)]` does **not** generate inherent methods on the wrapper struct. It generates **one trait per referenced interface**, named after the interface and carrying the wrapper's visibility, and implements it for the wrapper. Single-component accounts still call `account.method(..)` unchanged — as long as the generated trait is in scope.
+
+The consequences worth knowing before you hit them:
+
+- **The wrapper struct must not share a name with any generated trait.** `#[account(counter_contract::CounterContract)] struct CounterContract;` is a hard error. Rename the struct (e.g. `Counter`).
+- **A call site in a different module than the wrapper must `use` the generated trait.** A same-module `#[note]` / `#[tx_script]` entrypoint sees it automatically.
+- **A referenced interface must export at least one method**, or `#[account(...)]` errors.
+- **Wrappers are module-scope only.**
+- **Clashing method names are disambiguated with UFCS**: `<Wallet as BasicWallet>::deposit(account, asset)`. Generated traits are same-module so they need no import — but disambiguating against an `ActiveAccount` built-in does: `use miden::active_account::ActiveAccount;`.
+- **Clashing trait names are renamed with `as`**: `#[account(counter_contract::CounterContract as RemoteCounter)]`. The path still selects the interface.
+- **A component method named `new` is now legal.** `Wallet::new(id)` resolves to the inherent constructor, `wallet.new()` to the component method.
 
 ## Storage Slot Naming
 
@@ -116,9 +190,11 @@ Storage slot names are part of the on-chain storage ABI and are derived as:
 <package_name_snake>::<interface_segment_snake>::<field_name>
 ```
 
-The **middle segment is the interface segment of the `[lib].namespace`** in `miden-project.toml` (the part between the last `/` and `@`), snake-cased — **not** the snake-cased struct name. This deliberately decouples slot names from private Rust renames.
+The first segment is `[package] name` from **`miden-project.toml`** (character-sanitised, not re-snake-cased). The **middle segment is the interface segment of the `[lib].namespace`** (the part between the last `/` and `@`), snake-cased — **not** the snake-cased struct name. This deliberately decouples slot names from private Rust renames. The version suffix (`@0.1.0`) is ignored so the slot name stays stable, and there is no `slot(...)` attribute.
 
-Example: package `bank-account` + `namespace = "miden:bank-account/bank@0.1.0"` + field `balances` derives slot `bank_account::bank::balances` (see [miden-bank deposit_test.rs](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/integration/tests/deposit_test.rs), `bank_storage_slots()`). Note the version suffix (`@0.1.0`) is ignored so the slot name stays stable. Slots are derived from the slot name; there is no `slot(...)` attribute. See the rust-sdk-pitfalls skill (P5) for more on slot naming.
+Live values from the pinned examples: `counter_contract::counter_contract::count_map`, `auth_component_rpo_falcon512::auth_component::owner_public_key`.
+
+See the rust-sdk-pitfalls skill (P5) for more on slot naming.
 
 ## Storage Types
 
@@ -127,26 +203,38 @@ Example: package `bank-account` + `namespace = "miden:bank-account/bank@0.1.0"` 
 | `StorageValue<T>` | Single typed slot (flags, counters, IDs) | `.get() -> T` | `.set(T) -> T` |
 | `StorageMap<K, V>` | Typed key-value mapping (balances, records) | `.get(K) -> V` | `.set(K, V) -> V` |
 
+`K: WordKey`, and `T`/`V`: `WordValue`. `WordValue` is implemented for `Word`, `Felt`, `AssetAmount`, `Digest`, `AccountId`, `Recipient`, `Tag`, `NoteIdx`, `NoteType`; `WordKey` for the same set minus `Digest` and `Recipient`.
+
 ## Native Function Modules
 
 | Module | Key Functions | Purpose |
 |--------|--------------|---------|
-| `native_account::` | `add_asset(Asset) -> Word`, `remove_asset(Asset) -> Word`, `incr_nonce() -> Felt`, `get_id() -> AccountId` | Modify current account vault/nonce |
-| `active_account::` | `get_id() -> AccountId`, `get_balance(Word) -> Felt` | Query current account (`get_balance` takes the asset key word, not an AccountId) |
-| `active_note::` | `get_storage() -> Vec<Felt>`, `get_assets() -> Vec<Asset>`, `get_sender() -> AccountId` | Query note being consumed |
+| `native_account::` | `add_asset(Asset) -> Word`, `remove_asset(Asset) -> Word`, `incr_nonce() -> Nonce`, `get_id() -> AccountId`, `get_initial_asset(Word) -> Word`, `get_initial_commitment() -> Word`, `was_procedure_called(Word) -> bool`, `compute_delta_commitment() -> Word` | Modify / read the native account |
+| `active_account::` | `get_id() -> AccountId`, `get_nonce() -> Nonce`, `get_asset(asset_key: Word) -> Word`, `has_asset(asset_id: Word) -> bool`, `get_vault_root() -> Word`, `get_num_procedures() -> u32`, `get_procedure_root(u32) -> Word`, `has_procedure(Word) -> bool` | Query the active account |
+| `active_note::` | `get_storage() -> Vec<Felt>`, `get_initial_assets() -> Vec<Asset>`, `get_sender() -> AccountId`, `get_recipient() -> Recipient`, `get_metadata() -> NoteMetadata`, `find_attachment(Felt) -> Option<u32>`, `write_attachment_to_memory(u32) -> Vec<Word>` | Query the note being consumed |
 | `note::` | `build_recipient(Word, Word, Vec<Felt>) -> Recipient` | Build note recipients from serial number, script root, and note storage |
-| `output_note::` | `create(Tag, NoteType, Recipient) -> NoteIdx`, `add_asset(Asset, NoteIdx)` | Create output notes |
-| `faucet::` | `create_fungible_asset(Felt) -> Asset`, `mint(Asset)`, `burn(Asset)` | Asset minting |
-| `tx::` | `get_block_number() -> Felt`, `get_block_timestamp() -> Felt` | Transaction context |
+| `output_note::` | `create(Tag, NoteType, Recipient) -> NoteIdx`, `add_asset(Asset, NoteIdx)`, the `*_attachment` family | Create output notes |
+| `faucet::` | `mint(Asset)`, `burn(Asset)` | Move assets in and out of existence |
+| `tx::` | `get_block_number() -> BlockNumber`, `get_block_timestamp() -> u32`, `get_num_input_notes() -> u32`, `get_num_output_notes() -> u32`, `get_expiration_block_delta() -> u16`, `update_expiration_block_delta(u16)`, `execute_foreign_procedure(..)` | Transaction context and FPI |
 | Intrinsics | `assert(Felt)`, `assertz(Felt)`, `assert_eq(Felt, Felt)` | Validation (`assert` fails unless the felt equals 1; `assertz` fails unless it equals 0) |
+
+`add_asset`, `remove_asset` and the `active_account` queries are also trait methods auto-implemented on the `#[component_storage]` struct, so the idiomatic body is `self.add_asset(asset)` rather than the free function.
+
+### Three context restrictions the compiler will not catch
+
+- **`native_account::incr_nonce()` may only be called from the account's authentication procedure.** The kernel asserts the caller's origin; calling it from an ordinary component method panics at runtime.
+- **`output_note::create` is account-component context only.** A transaction or note script must go through a component method that wraps it — see `create_note` in `examples/basic-wallet/src/lib.rs`.
+- **`native_account::add_asset` / `remove_asset` are likewise account-context only** (see pitfall P11).
+
+### Balances and asset construction
+
+There is no `active_account::get_balance`. Read the asset value word with `active_account::get_asset(asset_key)` (or `native_account::get_initial_asset(asset_key)` for the pre-transaction value) and take the fungible amount from it; test membership with `active_account::has_asset(asset_id)`.
+
+There is also no in-transaction asset construction: `faucet::create_fungible_asset`, `create_non_fungible_asset`, `has_callbacks` and the whole `asset` module are gone. `faucet::mint` and `faucet::burn` take an already-built `Asset`.
 
 ## Asset Handling
 
-`Asset` is a two-word value (`key` + `value`):
-
-**Constructor**: `Asset::new(key, value)` builds an Asset from its vault key word and value word (the arguments are `impl Into<Word>`, so e.g. `Asset::new(key_word, value_word)` or from `[Felt; 4]`).
-
-See [miden-bank bank-account](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/bank-account/src/lib.rs) for complete asset handling patterns including deposit, withdrawal, and balance tracking.
+`Asset` is a two-word value:
 
 ```rust
 pub struct Asset {
@@ -155,43 +243,79 @@ pub struct Asset {
 }
 ```
 
-For fungible assets, the amount lives in `asset.value[0]`. The asset class / vault identity lives in `asset.key`.
+**Constructor**: `Asset::new(key, value)` builds an Asset from its two words (the arguments are `impl Into<Word>`).
+
+The guest field is literally named `key`, but the word it holds is the protocol's **asset ID** — the vault's unique identifier for the asset. Read `asset.key` as "the asset-ID word".
+
+For fungible assets the amount lives in `asset.value[0]`. Prefer the typed accessors over raw felt maths:
 
 ```rust
-// Access fungible amount
-let amount = asset.value[0];
+// Typed amount: panics if the asset is non-fungible or the amount is out of range
+let amount: AssetAmount = asset.amount();
+let fungible: bool = asset.is_fungible();
 
-// Keep the asset key if you need to persist or compare the asset class
-let asset_key = asset.key;
+// Raw form, if you need the felt
+let amount_felt = asset.value[0];
 
-// Add asset to account vault (only from component methods, not note scripts — see pitfall P11)
-native_account::add_asset(asset);
+// Keep the asset-ID word if you need to persist or compare the asset
+let asset_id = asset.key;
 
-// Remove asset from account vault (Asset is Copy, no clone needed)
-native_account::remove_asset(asset);
+// Vault operations (component methods only — see pitfall P11)
+self.add_asset(asset);
+self.remove_asset(asset);     // Asset is Copy, no clone needed
 ```
+
+`AssetAmount` is a validated newtype (`MAX_U64 = 2^63 - 2^31`) with integer ordering and add/sub that panic on over/underflow. It is usable in exported signatures and as a storage value type.
 
 ## P2ID Output Note Creation
 
-To send assets to another account, create a P2ID (Pay-to-ID) output note. See [miden-bank bank-account](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/bank-account/src/lib.rs) `create_p2id_note()` for a complete working implementation (builds the recipient with `note::build_recipient`, creates the note with `output_note::create`, then `native_account::remove_asset` + `output_note::add_asset`).
+To send assets to another account, create a P2ID output note **from an account-component method** — both `output_note::create` and `native_account::remove_asset` are account-context only, so a note or tx script cannot do this inline.
+
+The sequence is `note::build_recipient` → `output_note::create` → `remove_asset` + `output_note::add_asset`. `examples/basic-wallet/src/lib.rs` is the reference: `create_note` wraps `output_note::create`, and `move_asset_to_note` wraps the remove-then-add pair.
+
+`note::build_recipient` panics if the note storage exceeds `MAX_NOTE_STORAGE_ITEMS` (1024 felts). A note may carry at most `MAX_ASSETS_PER_NOTE` = **16** assets.
 
 ## Cross-Component Dependencies
 
-To call another component's methods from a note or tx script, declare the dependency in your `miden-project.toml` in **two places**:
+To call another component's methods from a note or tx script, declare the dependency in your **`miden-project.toml`** — never in `Cargo.toml`, which the macros read only for `[package] name` and `description`:
 
-- `[dependencies]` — a normal path (or registry) dependency on the component crate.
-- `[package.metadata.miden.dependencies]` — the generated WIT for the component, e.g. `bank-account = { wit = "../bank-account/target/generated-wit/" }`. The WIT is produced by building the dependency component first.
+```toml
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+basic-wallet = { path = "../basic-wallet" }
+```
 
-See `contracts/deposit-note/miden-project.toml` in [miden-bank](https://github.com/0xMiden/tutorials/tree/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/deposit-note) for a working example showing both sections.
+A component's WIT is embedded in its compiled package, and the embedded copy is authoritative. `cargo miden build` prepares source dependencies for you. Plain Cargo and IDE builds of a source dependency need the release-matched build helper to populate `MIDENC_PACKAGE_CACHE`:
 
-Then expose the dependency's methods on the consuming account by declaring an `#[account(package::Interface)]` wrapper (e.g. `#[account(bank_account::Bank)] pub struct Wallet;`) and calling methods on the injected `account` parameter. The package name is the dependency's Rust-style name (`-` replaced with `_`) and `Interface` is its exported WIT interface in UpperCamelCase. See `contracts/deposit-note/src/lib.rs` in [miden-bank](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/deposit-note/src/lib.rs).
+```toml
+[build-dependencies]
+miden-sdk-build-script-support = "0.14.0"
+```
+
+```rust
+// build.rs
+fn main() {
+    miden_sdk_build_script_support::prepare_package_cache();
+}
+```
+
+Direct `.masp` dependencies and an already valid package cache do not need this helper.
+
+Do **not** add a `[package.metadata.miden.dependencies].<name>.wit` key for such a dependency: when a package embeds WIT and the manifest also sets `wit`, expansion fails with *"embeds component WIT, but miden-project.toml also sets ... remove the `wit` key"* (`sdk/base-macros/src/dependency_package.rs`). The key survives only as a fallback for dependency packages that do **not** embed WIT, for example ones produced by another toolchain. No cross-component example in the compiler ships it.
+
+Then expose the dependency's methods on the consuming account by declaring an `#[account(package::Interface)]` wrapper (e.g. `#[account(basic_wallet::BasicWallet)] pub struct Wallet;`) and calling methods on the injected `account` parameter. The package name is the dependency's Rust-style name (`-` replaced with `_`) and `Interface` is its exported WIT interface in UpperCamelCase.
+
+A component can also declare siblings it calls with `#[component(pkg::Interface)]` on its own trait. The generated traits attach through a blanket impl bound on `NativeAccount`, so only the native account can make intra-account sibling calls.
+
+There is a second, wrapper-free form: the generated bindings expose free functions, which `examples/counter-note/src/lib.rs` uses directly (`use crate::bindings::miden::counter_contract::counter_contract; counter_contract::get_count();`).
 
 ## Common Type Conversions
 
 ```rust
 // Felt from integer
 let f = felt!(42);                     // preferred for literals in contract code
-let f = Felt::new(42).unwrap();        // fallible: Felt::new returns Result<Felt, _> in v0.15
+let f = Felt::new(42).unwrap();        // fallible: Felt::new returns Result<Felt, FeltFromIntError>
 let f = Felt::new_unchecked(42);       // infallible, non-reducing form
 let f = Felt::from_u32(42);            // infallible (u32 always fits)
 let f = Felt::from_canonical_checked(42).unwrap(); // returns Option<Felt>
@@ -211,9 +335,21 @@ let hex = w.to_hex();
 let n: u64 = f.as_canonical_u64();
 ```
 
+### Kernel scalars are typed, not felts
+
+Counts are `u32` (`tx::get_num_input_notes`, `tx::get_num_output_notes`, `active_account::get_num_procedures`, and the `num_assets` / `num_storage_items` fields of the note-info structs), so count-driven loops index directly. Block heights are `BlockNumber` (comparable as integers; `BlockNumber::try_from(felt)` validates a height read out of note storage). Block timestamps are `u32` seconds and expiration deltas are `u16`. Account nonces are `Nonce` — use `as_felt()` / `as_u64()` or `Felt::from(nonce)` where a raw value is needed, e.g. when packing a nonce into a `Word`. Attachment lookups return `Option<u32>`.
+
+## Debug Printing
+
+```rust
+miden::println!("checkpoint");        // string literal / &str only — format args are a compile error
+miden::debug::println(some_str);
+miden::intrinsics::debug::breakpoint();
+```
+
 ## No-std Requirements
 
-Every contract file must start with `#![no_std]` and `#![feature(alloc_error_handler)]`. See any contract under `contracts/` in [miden-bank](https://github.com/0xMiden/tutorials/tree/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts) for the pattern.
+Every contract file must start with `#![no_std]` and `#![feature(alloc_error_handler)]`.
 
 If you need heap allocation (Vec, String, etc.):
 ```rust
@@ -221,24 +357,44 @@ extern crate alloc;
 use alloc::vec::Vec;
 ```
 
-The bank-account contract uses `#[macro_use] extern crate alloc;` so the `vec!` macro is available (it builds note-recipient inputs with `vec![...]`).
+Use `#[macro_use] extern crate alloc;` when you want the `vec!` macro available (e.g. for building note-recipient inputs).
 
 ## Asset Receiving via Component Methods
 
-Note scripts cannot call `native_account::add_asset()` directly (see pitfall P11). The canonical pattern is for an account component to expose a public (trait) method that wraps `native_account::add_asset()`, and the note script calls that method through the `#[account(...)]` wrapper.
+Note scripts cannot call `native_account::add_asset()` directly (see pitfall P11). The canonical pattern is for an account component to expose a trait method — marked `#[account_procedure]` — that wraps `add_asset`, and for the note script to call that method through the `#[account(...)]` wrapper.
 
-See [miden-bank bank-account deposit()](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/bank-account/src/lib.rs) for the component side: the `deposit()` trait method validates the deposit, updates storage, and calls `native_account::add_asset()`.
+Component side (`examples/basic-wallet/src/lib.rs`):
 
-See [miden-bank deposit-note](https://github.com/0xMiden/tutorials/blob/a255af7959a441d9a027178631c666949b4af086/examples/miden-bank/contracts/deposit-note/src/lib.rs) for the note side: the note declares `#[account(bank_account::Bank)] pub struct Wallet;` and, inside `#[note_script] fn run(self, _arg: Word, account: &mut Wallet)`, calls `account.deposit(depositor, asset)` on that wrapper. It is **not** a free `bank_account::deposit()` call.
+```rust
+#[component]
+trait BasicWallet {
+    #[account_procedure]
+    fn receive_asset(&mut self, asset: Asset);
+}
+
+#[component]
+impl BasicWallet for BasicWalletStorage {
+    fn receive_asset(&mut self, asset: Asset) {
+        self.add_asset(asset);
+    }
+}
+```
+
+Note side (`examples/p2id-note/src/lib.rs`): the note declares `#[account(basic_wallet::BasicWallet)] pub struct Wallet;` and, inside `#[note_script] fn script(self, _arg: Word, account: &mut Wallet)`, calls `account.receive_asset(asset)` on that wrapper. It is **not** a free `basic_wallet::receive_asset()` call.
 
 ## Validation Checklist
 
 - [ ] `#![no_std]` and `#![feature(alloc_error_handler)]` at top of every contract
 - [ ] Account components use the three-part pattern: `#[component_storage]` struct + `#[component]` trait + `#[component]` impl (never `#[component]` on a struct)
-- [ ] `crate-type = ["cdylib"]` in `Cargo.toml`
-- [ ] Correct `[lib] kind` in `miden-project.toml` (`account-component` / `note` / `tx-script`) with the matching `namespace`
+- [ ] Every externally-callable trait method carries `#[account_procedure]`, on the **trait**, not the impl
+- [ ] `#[account_procedure]` and `#[auth_script]` are not combined in one component
+- [ ] The `#[account(...)]` wrapper struct name differs from every generated trait name
+- [ ] `edition = "2024"` and `crate-type = ["cdylib"]` in `Cargo.toml`, with the full final-release requirement `miden = "0.14.0"`
+- [ ] `[lib]` in `miden-project.toml` has `kind` (`account-component` / `note` / `tx-script`), `namespace`, **and `path`**
+- [ ] `[dependencies]` in `miden-project.toml` carries `miden-core = "*"` and `miden-protocol = "*"`
 - [ ] Typed storage uses `StorageValue<T>` / `StorageMap<K, V>` with `get()` / `set()`; slot names derive from `<package>::<namespace-interface>::<field>`
 - [ ] Notes/tx-scripts that call a component declare an `#[account(package::Interface)]` wrapper and call methods on the injected `account`
-- [ ] Cross-component deps declared in `miden-project.toml` under both `[dependencies]` (path) and `[package.metadata.miden.dependencies]` (wit)
+- [ ] Cross-component deps declared in `miden-project.toml` (never `Cargo.toml`) under `[dependencies]`, with no `[package.metadata.miden.dependencies]` `wit` key when embedded WIT is present; plain Cargo and IDE source builds prepare `MIDENC_PACKAGE_CACHE` from `build.rs`
+- [ ] `incr_nonce()` is called only from an authentication procedure; `output_note::create` and the vault operations only from account-component context
 - [ ] Felt arithmetic validated before subtraction (see rust-sdk-pitfalls skill)
 - [ ] Felt comparisons use `.as_canonical_u64()` (see rust-sdk-pitfalls skill)

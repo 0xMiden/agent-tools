@@ -18,7 +18,7 @@ Skills are applied automatically when the agent detects relevant tasks. Each ski
 ### React Frontend Development
 
 - **react-sdk-patterns** – Complete `@miden-sdk/react` hook API reference: MidenProvider, query hooks, mutation hooks, transaction stages, signer integration, utilities
-- **frontend-pitfalls** – Critical frontend pitfalls: WASM init race, recursive access crash, COOP/COEP headers, BigInt handling, Bech32 mismatch, IndexedDB state loss
+- **frontend-pitfalls** – Critical frontend pitfalls: client-readiness gating, multi-step WASM sequences and pointer lifetimes, COOP/COEP headers, BigInt boundaries, Bech32 network prefixes, IndexedDB state loss, the Web Worker shim, and structured error codes
 - **vite-wasm-setup** – Vite + WASM configuration: required plugins, deployment headers (Nginx, Vercel, Cloudflare), TypeScript config, troubleshooting
 - **frontend-source-guide** – Advanced frontend development guide: AI practices and miden-client source repository map for discovering patterns beyond basic skills
 - **signer-integration** – Integrating external signers (Para, Turnkey, MidenFi wallet adapter) and building custom signers for Miden React frontends
@@ -29,14 +29,15 @@ Skills are applied automatically when the agent detects relevant tasks. Each ski
 - **masm-inline-comments** – Inline commenting conventions for .masm files (lowercase, avoid over-commenting)
 - **masm-doc-comments** – Procedure documentation format (`#!` doc blocks with Inputs, Outputs, Where, Panics, Invocation)
 - **masm-padding** – Stack padding conventions for `call` vs `exec` procedures
-- **masm-formatting** – Orchestrator covering capitalization, `(N)` span notation, cross-repo doc-comment divergences, `Cycles:`, and chained assertion style
+- **masm-formatting** – Orchestrator covering capitalization, `(N)` span notation, cross-repo doc-comment divergences, `Cycles:`, chained assertion style, and the `miden-format` formatter
+- **masm-proc-type-signatures** – Type-signature conventions for `pub proc`: parameter and return types, semantic type aliases, struct/array/tuple types, and how a signature maps onto the operand stack
 
 ### Miden Client (Web SDK & Internals)
 
 - **rust-client-patterns** – Rust conventions for the `miden-client` crate: error handling (`thiserror` + `ErrorHint`), `Store` trait (adding methods across `SqliteStore`/`WebStore` with cross-platform `async_trait`), `Client<AUTH>` generic pattern with the `Keystore` super-trait, `no_std` imports (`alloc::`/`core::`), `ClientBuilder` network constructors (`for_testnet()`, `for_devnet()`, `for_localhost()`), and section header formatting (`// ===` top-level, `// ---` subsections)
 - **wasm-bridge** – Rust↔JS WASM boundary conventions for the `web-client` crate: `#[wasm_bindgen]` method exposure with `js_name`, newtype wrappers with `From` conversions, `js_error_with_context` error chaining with `ErrorHint`, promise handling (`await_js`/`await_ok`/`await_js_value`), data transfer objects with `getter_with_clone`, JS function imports, and the `MidenClient`/`WasmWebClient` (`WebClient`) two-layer JS API
 - **idxdb-patterns** – IndexedDB/Dexie persistence conventions for the `idxdb-store` crate: Dexie transactions (`db.dexie.transaction("rw", tables, ...)`), schema interfaces (`IAccount`, `IAccountCode`), database registry (`getDatabase`/`openDatabase`), `logWebStoreError` error handling, forward-only state updates, and the TS→JS dual-commit build workflow
-- **web-client-usage** – Developer-facing patterns for using the `@miden-sdk/miden-sdk` npm package: `MidenClient.create()` initialization, the resource-based API (`client.accounts`, `client.transactions`, `client.notes`, `client.tags`, `client.settings`, `client.compile`, `client.keystore`), sync ordering, type conversions (`AccountId.fromHex`, `BigInt` amounts, `NoteVisibility`), transaction flows (mint, send, consume, swap, custom contracts), private note transport, querying, import/export, and pitfall avoidance
+- **web-client-usage** – Developer-facing patterns for using the `@miden-sdk/miden-sdk` npm package: `MidenClient.create()` initialization, the resource-based API (`client.accounts`, `client.transactions`, `client.notes`, `client.pswap`, `client.tags`, `client.settings`, `client.compile`, `client.keystore`), sync ordering, type conversions (`AccountId.fromHex`, `BigInt` amounts, `NoteVisibility`), transaction flows (mint, send, consume, swap, custom contracts), private note transport, querying, import/export, and pitfall avoidance
 
 ## Commands
 

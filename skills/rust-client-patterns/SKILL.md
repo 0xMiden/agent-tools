@@ -6,12 +6,34 @@ description: Enforce coding conventions for the miden-client Rust codebase (rust
 # Miden Client Rust Patterns
 
 The crate ships under `crates/rust-client`, with `crates/sqlite-store` as the
-native persistence backend and `crates/testing` for test utilities. The
-WASM/IndexedDB store and the JS web client live in the separate
-`0xMiden/web-sdk` repository. The MSRV
-tracks `rust-toolchain.toml` in the upstream `miden-client` repository — copy
-that channel into the consumer's toolchain file rather than hard-coding a
-number that drifts.
+native persistence backend. Reusable **test utilities** live in
+`crates/rust-client/src/test_utils`, re-exported as `miden_client::testing`
+behind the `testing` feature; `crates/testing/` holds the test crates
+themselves (`miden-client-tests`, `test-node-genesis`), not utilities to depend
+on. The WASM/IndexedDB store and the JS web client live in the separate
+`0xMiden/web-sdk` repository.
+
+The upstream repository is `https://github.com/0xMiden/rust-sdk`; the crate is
+still published as `miden-client`. The MSRV tracks `rust-toolchain.toml`
+there — copy that channel into the consumer's toolchain file rather than
+hard-coding a number that drifts.
+
+Pin the exact pre-release strings; Cargo does not match a pre-release against a
+plain `"0.16"` requirement:
+
+```toml
+miden-client              = "0.16.0-rc.5"
+miden-client-sqlite-store = "0.16.0-rc.5"
+miden-protocol            = "0.16.0-rc.9"
+miden-standards           = "0.16.0-rc.9"
+miden-tx                  = "0.16.0-rc.9"
+miden-tx-batch            = "0.16.0-rc.9"
+miden-assembly            = "0.29.1"
+miden-core                = "0.29.1"
+miden-processor           = "0.29.1"
+miden-prover              = "0.29.1"
+miden-crypto              = "0.29.1"
+```
 
 ## Section Headers
 
@@ -102,7 +124,7 @@ self.store
 `.map_err(ClientError::StoreError)` is the canonical way to surface a
 `StoreError` from a `Store` call inside the client.
 
-Never use `.unwrap()` or `.expect()` in library code. Always propagate with `?` after mapping.
+Prefer propagating with `?` after mapping over `.unwrap()`. `.expect()` does appear in the crate for invariants the author has already proven (e.g. `"Default executor's options should always be valid"`), so treat it as reserved for that case and carrying a message that states the invariant — not as a shortcut around a fallible call.
 
 ## Store Trait
 
@@ -187,7 +209,7 @@ Rules:
 
 ### Impl Block Constraints
 
-Apply the AUTH constraint per impl block, not on the struct. At v0.15 the
+Apply the AUTH constraint per impl block, not on the struct. The
 `Client<AUTH>` impl blocks use these bounds:
 
 ```rust
@@ -205,14 +227,32 @@ where
     AUTH: TransactionAuthenticator,
 {
     pub fn authenticator(&self) -> Option<&Arc<AUTH>> { ... }
-    // in_debug_mode, note_screener, rng, prover, source_manager, ...
+    // code_builder, note_screener, rng, prover, source_manager
 }
 
 // Methods that don't touch AUTH at all use an unconstrained block.
 impl<AUTH> Client<AUTH> {
     pub fn store_identifier(&self) -> &str { ... }
+    pub fn with_transaction_observer(&mut self, observer: Arc<dyn TransactionObserver>) { ... }
+    pub async fn network_id(&self) -> Result<NetworkId, ClientError> { ... }
 }
 ```
+
+**There is no debug toggle.** `DebugMode`, `ClientBuilder::in_debug_mode`,
+`Client::in_debug_mode`, the CLI `--debug` flag and the `MIDEN_DEBUG`
+environment variable do not exist. There is nothing to gate: MASM print-style
+debugging goes through the `miden::core::debug` procedures, which print
+unconditionally.
+
+What replaced them is a debug adapter, not a flag. The client carries an
+optional `dap` feature (`dap = ["dep:miden-debug", "dep:miden-processor", "std"]`)
+backing a `DapProgramExecutor`. The CLI has its **own** `dap` feature
+(`dap = ["dep:miden-debug", "miden-client/dap"]`) which is **not** in its
+`default = []`, so a stock CLI build exposes nothing — enabling the library
+feature alone is not enough. When the CLI is built with its `dap` feature, the
+flags `--start-debug-adapter <ADDR>` and `--record <FILE>` appear on exactly two
+commands: `exec` and `consume-notes`. `mint`, `transfer`, `swap` and the PSWAP
+commands do not accept them.
 
 (The sync methods sit in their own block bounded by
 `AUTH: TransactionAuthenticator + Sync + 'static`.)
@@ -296,6 +336,66 @@ let client = ClientBuilder::for_testnet()
     .await?;
 ```
 
+`build()` returns `ClientInitializationError` if no RPC client or no store was
+configured. Builder defaults worth knowing: `TX_DISCARD_DELTA = 20`,
+`IRRELEVANT_BLOCK_PRUNE_INTERVAL = 1`, `CACHE_PARTIAL_MMR_IN_MEMORY = false`.
+
+Other builder methods: `grpc_client(&Endpoint, Option<u64>)`, `source_manager`,
+`irrelevant_block_prune_interval(Option<u32>)`,
+`cache_partial_mmr_in_memory(bool)`, `tx_graceful_blocks(Option<u32>)`,
+`note_transport(Arc<dyn NoteTransportClient>)`, `endpoint() -> Option<&Endpoint>`,
+and — on `ClientBuilder<FilesystemKeyStore>` — `filesystem_keystore(path)`.
+
+#### `.rpc()` does not verify responses
+
+`ClientBuilder::rpc()` takes the client **as provided**. Only `grpc_client(..)`
+and the `for_testnet` / `for_devnet` / `for_localhost` constructors wrap the
+transport in `VerifyingRpcClient`. Handing `.rpc()` a bare `GrpcClient`
+compiles, runs, and silently drops response verification:
+
+```rust
+// Wrong: no response verification, and nothing tells you so.
+ClientBuilder::new().rpc(Arc::new(GrpcClient::new(&endpoint, timeout)))
+
+// Right: wrap it, or use grpc_client()/for_*() which wrap for you.
+ClientBuilder::new().rpc(Arc::new(VerifyingRpcClient::new(GrpcClient::new(&endpoint, timeout))))
+ClientBuilder::new().grpc_client(&endpoint, Some(timeout))
+```
+
+### Account updates: `AccountPatch`, and the `account_delta` exception
+
+An executed transaction reports the account's new state as an **`AccountPatch`**:
+`TransactionResult::account_patch() -> &AccountPatch`.
+
+`AccountDelta` has not gone away and is not a stale alias. It is *relative* —
+it records how much things changed — and it is what a transaction summary
+commits to. `TransactionSummary::account_delta() -> &AccountDelta` is
+deliberately still a delta. Renaming that call site to `account_patch()`, or
+rewriting the code around it to expect absolute values, is a semantic bug that
+the compiler will not catch on the summary path.
+
+### Fees
+
+```rust
+let request = TransactionRequestBuilder::new()
+    .fee_conversion_salt(salt)
+    .build()?;
+```
+
+`fee_conversion_salt` declares the salt; during transaction preparation the client creates the
+native-asset 1:1 fee-conversion information. It and `auth_arg()` are mutually exclusive: setting
+one clears the other. Leave the salt unset for the supported single-signature default. The
+multisig, smart-multisig, and guarded-multisig auth variants require a caller-chosen salt; auth
+components that do not support fee conversion reject an explicitly declared salt.
+
+### `AssetId` is the vault key, not the asset class
+
+`miden_client::asset` re-exports `AssetId` as the vault's unique identifier for
+an asset; the per-faucet class within an asset id is a separate type,
+`AssetClass`. The names are a trap: code that treats `AssetId` as the asset
+class compiles and is wrong. `miden_client::asset` also exposes `AssetAmount`,
+`AssetCallbacks`, `AssetComposition`, `AssetWitness`, and `PartialVault`.
+
 ## Lazy Reader Patterns
 
 Prefer the lazy readers over loading whole `Account` / `Note` records when
@@ -306,7 +406,7 @@ asset vaults that a frontend will not display anyway.
 // Account fields without loading the full Account
 let reader = client.account_reader(account_id);
 let (header, status) = reader.header().await?;
-let balance        = reader.get_balance(faucet_id).await?;
+let balance        = reader.get_balance(faucet_id).await?;        // AssetAmount, not u64; AssetAmount::ZERO when absent
 let storage_item   = reader.get_storage_item(slot_name).await?;  // slot_name: impl Into<StorageSlotName>
 let nonce          = reader.nonce().await?;
 let vault_root     = reader.vault_root().await?;

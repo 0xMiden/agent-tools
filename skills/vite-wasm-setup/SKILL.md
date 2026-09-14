@@ -1,9 +1,11 @@
 ---
 name: vite-wasm-setup
-description: Guide to configuring Vite for Miden WASM applications. Covers the midenVitePlugin() setup, COOP/COEP headers, production deployment headers, TypeScript compatibility, and troubleshooting common Vite + WASM issues. Use when setting up a new Miden frontend, debugging build or runtime errors related to WASM or Vite configuration, or deploying to production.
+description: Guide to configuring Vite for Miden WASM applications. Covers the midenVitePlugin() setup and its four options, single- vs multi-threaded WASM entry points, COOP/COEP headers, production deployment headers, the Web Worker shim, TypeScript compatibility, and troubleshooting common Vite + WASM issues. Use when setting up a new Miden frontend, debugging build or runtime errors related to WASM or Vite configuration, or deploying to production.
 ---
 
 # Vite + WASM Configuration for Miden
+
+Everything below is current for `@miden-sdk/*` `0.16.0-rc.7` (web-sdk repo).
 
 ## Required `vite.config.ts`
 
@@ -17,53 +19,220 @@ export default defineConfig({
 });
 ```
 
-`midenVitePlugin()` works with no options for the common case — the default `@miden-sdk/miden-sdk` / `@miden-sdk/react` imports ship **single-threaded (ST)** WASM that loads in any browser context, so the default client runs with no cross-origin isolation. The plugin's `crossOriginIsolation` option defaults to `false` for the same reason, and the v0.15.0 example wallet app calls `midenVitePlugin()` bare. Don't reach for `crossOriginIsolation: true` unless you have actually opted into the multi-threaded build (see below).
+`midenVitePlugin` is exported both as a named export and as the default export,
+and the plugin declares `enforce: "pre"` so it runs ahead of other plugins'
+`config` hooks. It works with no options for the common case — the default
+`@miden-sdk/miden-sdk` / `@miden-sdk/react` imports ship **single-threaded (ST)**
+WASM that loads in any browser context, so the default client runs with no
+cross-origin isolation. The in-repo example app
+(`packages/react-sdk/examples/wallet/vite.config.ts`) is the source-of-truth
+reference; it calls `midenVitePlugin()` bare alongside the Para plugin:
 
-Pass `crossOriginIsolation: true` **only** if you import the **multi-threaded (MT)** WASM variant — `@miden-sdk/miden-sdk/mt` (or `/mt/lazy`) and `@miden-sdk/react/mt` (or `/mt/lazy`). The MT build uses `wasm-bindgen-rayon` and `SharedArrayBuffer` / `WebAssembly.Memory({ shared: true })` for ~3–5x faster local proving, which the browser only constructs when the page is cross-origin-isolated (COOP `same-origin` + COEP `require-corp`). On the default ST imports those headers are unnecessary. The [frontend template](https://github.com/0xMiden/frontend-template)'s `vite.config.ts` is the source-of-truth reference for the current setup.
+```typescript
+plugins: [react(), midenVitePlugin(), paraVitePlugin()],
+```
 
-If your app must host third-party iframes, OAuth popups, or other cross-origin resources that don't emit `require-corp`, stay on the default ST imports and leave `crossOriginIsolation: false` (the default) — you keep a fully working Miden client and only forgo MT-accelerated local proving on that route. Enabling `crossOriginIsolation: true` also breaks OAuth-popup flows (e.g. Para), because `same-origin` COOP nullifies `window.opener` in popups. If you genuinely need both MT proving and cross-origin resources, embed the latter via `credentialless` COEP as a workaround (see the Gotchas section below).
+## Plugin Options
+
+`MidenVitePluginOptions` has **four** options. All are optional; these are the
+real defaults taken from the destructuring in `packages/vite-plugin/src/index.ts`:
+
+| Option | Type | Default | Purpose |
+|---|---|---|---|
+| `wasmPackages` | `string[]` | `["@miden-sdk/miden-sdk"]` | Packages to alias, dedupe, and exclude from pre-bundling |
+| `crossOriginIsolation` | `boolean` | `false` | Emit COOP/COEP headers on the dev + preview servers |
+| `rpcProxyTarget` | `string \| false` | `"https://rpc.testnet.miden.io"` | gRPC-web dev proxy target; `false` disables the proxy |
+| `rpcProxyPath` | `string` | `"/rpc.Api"` | Path prefix the dev proxy matches on |
+
+```typescript
+midenVitePlugin({
+  wasmPackages: ["@miden-sdk/miden-sdk"],
+  crossOriginIsolation: false,
+  rpcProxyTarget: "https://rpc.testnet.miden.io",
+  rpcProxyPath: "/rpc.Api",
+});
+```
+
+> **Do not trust `packages/vite-plugin/README.md` for the
+> `crossOriginIsolation` default.** At `0.16.0-rc.7` that README still shows
+> `crossOriginIsolation: true, // default` and a `**Default:** \`true\`` bullet,
+> while the executable source destructures `crossOriginIsolation = false` and a
+> unit test asserts the plugin "does not set COOP/COEP headers by default"
+> (`packages/vite-plugin/src/__tests__/config.test.ts`). The source wins.
+
+Don't reach for `crossOriginIsolation: true` unless you have actually opted into
+the multi-threaded build.
+
+## Multi-Threaded (MT) WASM — Opt-In Isolation and Worker Initialization
+
+Pass `crossOriginIsolation: true` **only** if you import the multi-threaded WASM
+variant — `@miden-sdk/miden-sdk/mt` (or `/mt/lazy`) and `@miden-sdk/react/mt`
+(or `/mt/lazy`). All four entry points exist in both packages' `exports` maps.
+The MT build uses `wasm-bindgen-rayon` and `SharedArrayBuffer` /
+`WebAssembly.Memory({ shared: true })` for ~3–5x faster local proving.
+
+**1. The page must be cross-origin-isolated** (COOP `same-origin` + COEP
+`require-corp`). Without those headers the browser refuses to construct
+`WebAssembly.Memory({ shared: true })` and the MT WASM fails to instantiate at
+SDK load. `midenVitePlugin({ crossOriginIsolation: true })` covers the Vite dev
+and preview servers only — see Production Deployment Headers.
+
+**2. Let the worker-backed client initialize its own pool.** With the default
+`useWorker !== false` path, the client passes `navigator.hardwareConcurrency`
+to its worker when the page is cross-origin-isolated and multiple hardware
+threads are available. The worker calls `initThreadPool` before constructing
+its `WebClient`. A manual call on the main thread initializes a different WASM
+instance and does not replace the worker's initialization.
+
+Call `initThreadPool(n)` yourself only when using the MT entry directly on the
+current thread, such as a client created with `useWorker: false` or in an
+environment without Worker support:
+
+```typescript
+import { MidenClient, initThreadPool } from "@miden-sdk/miden-sdk/mt/lazy";
+
+await MidenClient.ready();
+await initThreadPool(navigator.hardwareConcurrency); // same realm as the direct MT client
+const client = await MidenClient.create({ useWorker: false });
+```
+
+Do not add a React `ThreadPoolBoot` component to the normal worker-backed
+provider path. The ST entries do not expose `initThreadPool` because there is
+no thread pool to initialize.
+
+If your app must host third-party iframes, OAuth popups, or other cross-origin
+resources that don't emit `require-corp`, stay on the default ST imports and
+leave `crossOriginIsolation: false` — you keep a fully working Miden client and
+only forgo MT-accelerated local proving. Enabling `crossOriginIsolation: true`
+also breaks OAuth-popup flows (e.g. Para), because `same-origin` COOP nullifies
+`window.opener` in popups; this is the plugin's own stated reason for defaulting
+the option to `false`.
 
 ## What midenVitePlugin() Handles
 
-`@miden-sdk/vite-plugin` abstracts Miden-specific Vite configuration. It does **not** register a `.wasm` module loader — Vite's built-in handling does the actual `.wasm` import. What the plugin sets up:
+`@miden-sdk/vite-plugin` abstracts Miden-specific Vite configuration. It only
+implements the `config` and `configResolved` hooks — it does **not** register a
+`.wasm` module loader, because Vite's built-in handling does the actual `.wasm`
+import. What the plugin sets up:
 
-- **WASM dedup / single copy** — `resolve.alias` (exact-match regex on the WASM package), `resolve.dedupe`, and `resolve.preserveSymlinks` force a single resolved copy of `@miden-sdk/miden-sdk` (avoids WASM class-identity issues across symlinked/monorepo setups)
-- **optimizeDeps.exclude** — Excludes `@miden-sdk/miden-sdk` from pre-bundling (pre-bundling corrupts the WASM binary)
-- **Top-level await** — Sets `build.target: "esnext"`, which enables the top-level `await` the WASM SDK initialization requires
-- **ES-module workers** — Sets `worker.format: "es"`, required for the WASM SDK's module workers
-- **COOP/COEP headers (opt-in, MT only)** — `crossOriginIsolation` defaults to `false`. When set to `true`, emits `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` on **both** the Vite dev server and the Vite preview server (see Production Deployment Headers). Only needed to satisfy the cross-origin-isolation requirement of the MT WASM variant; the default ST build doesn't need these headers
-- **gRPC-web dev proxy** — Proxies `/rpc.Api` to `rpcProxyTarget` (default `https://rpc.testnet.miden.io`) during `vite` (serve) to bypass CORS in dev; set `rpcProxyTarget: false` to disable
-- **React context dedup** — Externalizes `@miden-sdk/react` during esbuild pre-bundling so signer-provider React contexts share one identity
+- **WASM dedup / single copy** — `resolve.alias` (an exact-match `^<pkg>$`
+  regex, so subpath imports like `/lazy` still resolve through the package's
+  `exports` map), `resolve.dedupe`, and `resolve.preserveSymlinks: true` force a
+  single resolved copy of each entry in `wasmPackages`. The alias replacement is
+  computed with `require.resolve` for pnpm / Yarn PnP portability. The dedupe
+  list is `[...wasmPackages, "react", "react-dom", "react/jsx-runtime",
+  "@miden-sdk/react"]`
+- **optimizeDeps.exclude** — excludes `wasmPackages` from pre-bundling
+  (pre-bundling corrupts the WASM binary)
+- **Top-level await** — sets `build.target: "esnext"`, and in `configResolved`
+  also forces `optimizeDeps.esbuildOptions.target = "esnext"`
+- **ES-module workers** — sets `worker.format: "es"` and
+  `worker.rollupOptions.output.format = "es"`, required for the SDK's module
+  workers
+- **COOP/COEP headers (opt-in, MT only)** — guarded by
+  `if (crossOriginIsolation)`; when enabled it emits `Cross-Origin-Opener-Policy:
+  same-origin` + `Cross-Origin-Embedder-Policy: require-corp` on **both**
+  `server.headers` and `preview.headers`
+- **gRPC-web dev proxy** — when `rpcProxyTarget !== false && env.command ===
+  "serve"`, proxies `rpcProxyPath` (default `/rpc.Api`) to `rpcProxyTarget` with
+  `changeOrigin: true`, to bypass CORS in dev
+- **React context dedup** — an `externalize-miden-react` esbuild plugin pushed
+  into `optimizeDeps.esbuildOptions.plugins` marks `@miden-sdk/react` external
+  during pre-bundling, so signer-provider React contexts share one identity
 
-You don't need to install or configure `vite-plugin-wasm`, `vite-plugin-top-level-await`, or dexie aliases manually.
+The `configResolved` hook re-applies the esbuild plugin, the esnext target, and
+the dedupe entries *after* all plugins' `config` hooks have merged, so other
+plugins (e.g. `vite-plugin-node-polyfills`) can't overwrite them.
+
+You don't need to install or configure `vite-plugin-wasm`,
+`vite-plugin-top-level-await`, or dexie aliases manually.
 
 ## Required Dependencies
 
-Two packages move together as the core SDK pair: `@miden-sdk/miden-sdk` (the WASM client) and `@miden-sdk/react` (the React hooks). At v0.15.0 both are `0.15.0` and share a WASM ABI, so they must match. The **vite-plugin and the wallet adapters are versioned independently** and can trail the core SDK by a minor/patch — don't assume they're in lockstep. The [frontend template](https://github.com/0xMiden/frontend-template)'s `package.json` is the reference for the current pin set; re-run your app's full build + end-to-end suite whenever you bump.
+At `0.16.0-rc.7`, `@miden-sdk/miden-sdk`, `@miden-sdk/react`, and
+`@miden-sdk/vite-plugin` all publish at the same version. Pin them exactly:
 
 ```json
 {
   "dependencies": {
-    "@miden-sdk/react": "<matches @miden-sdk/miden-sdk>",
-    "@miden-sdk/miden-sdk": "<authoritative core version>",
-    "@miden-sdk/miden-wallet-adapter-react": "<independent — see 0xMiden/wallet-adapter repo>"
+    "@miden-sdk/miden-sdk": "0.16.0-rc.7",
+    "@miden-sdk/react": "0.16.0-rc.7"
   },
   "devDependencies": {
-    "@miden-sdk/vite-plugin": "<may lag the core SDK by a minor/patch — see your package.json>"
+    "@miden-sdk/vite-plugin": "0.16.0-rc.7"
   }
 }
 ```
 
 Notes:
-- **`@miden-sdk/react` and `@miden-sdk/miden-sdk` must match** — they link against the same WASM ABI, so a mixed pair (e.g. one built against an older WASM ABI, one against the current) won't link. Upgrade them together.
-- **The `@miden-sdk/vite-plugin` does NOT track the core SDK version.** At v0.15.0 the plugin trails the core SDK by a minor and is NOT on the same version as `@miden-sdk/miden-sdk@0.15.0`; they only realign later in the 0.15 line. Always defer to your app's `package.json` (or the frontend template's) for the authoritative plugin pin — never assume `vite-plugin === miden-sdk`.
-- **The wallet adapters live in a separate repo.** `@miden-sdk/miden-wallet-adapter-react` (and its companion `@miden-sdk/miden-wallet-adapter-base`) are published from [`0xMiden/wallet-adapter`](https://github.com/0xMiden/wallet-adapter), not the web-sdk repo, and are versioned independently. Confirm the exact package names and versions against that repo (or your app's `package.json`); the `-react` adapter's `peerDependencies` pin `@miden-sdk/react` at `^<major>.<minor>.x`, so a patch-level gap from the core SDK is expected and fine.
-- **Always check your app's `package.json` (or the [frontend template](https://github.com/0xMiden/frontend-template)'s) for the authoritative versions** — this skill intentionally doesn't inline them because they shift across SDK releases.
-- When you bump, do a clean install with your project's package manager: delete `node_modules` and the lockfile it actually uses, then reinstall. The web-sdk uses pnpm (`rm -rf node_modules pnpm-lock.yaml && pnpm install`). For an app repo, use whatever package manager its lockfile implies — e.g. the frontend template's v0.15 branch ships a `yarn.lock` (`rm -rf node_modules && yarn install`), while another app may use `npm ci` or `pnpm install`. Vite's dep optimizer caches resolved SDK paths, and stale caches can surface as `ERR_BLOCKED_BY_RESPONSE` or spurious `Failed to fetch` errors on module workers.
+
+- **These are prerelease versions, and npm range syntax does not match
+  prereleases.** `"0.16"`, `"^0.16.0"`, `"~0.16.0"` and `"0.16.x"` will NOT
+  resolve to `0.16.0-rc.7` — they either fail to resolve or silently drift to a
+  later stable line. Use the exact string, or the caret-on-a-prerelease form
+  `"^0.16.0-rc.7"` that the in-repo example
+  (`packages/react-sdk/examples/wallet/package.json`) uses.
+- **`@miden-sdk/react` and `@miden-sdk/miden-sdk` must match.** The React SDK's
+  peer dependency is `"@miden-sdk/miden-sdk": "^0.16.0-rc.7"`, and the repo
+  enforces the coupling in CI. Per its `README.md`: "A repo-wide
+  `scripts/check-react-sdk-sync.js` enforces that React peer ranges and example
+  dependencies pin to the exact patch version of the WASM client they were
+  built against." Upgrade them together.
+- **The vite-plugin still carries its own version field.** It happens to match
+  the core SDK at this pin, but it is released through a separate gate
+  (`scripts/check-vite-plugin-version-release.sh` publishes it only when its
+  local `package.json` version is not already on npm), so it can drift between
+  releases. Always defer to your app's `package.json` rather than assuming
+  `vite-plugin === miden-sdk`.
+- **The wallet adapter is published from the web-sdk monorepo.** The example app
+  imports `MidenFiSignerProvider` from
+  `@miden-sdk/miden-wallet-adapter-react`, whose package source is
+  [`packages/adapter/react`](https://github.com/0xMiden/web-sdk/tree/v0.16.0-rc.7/packages/adapter/react)
+  in `0xMiden/web-sdk`.
+  Keep it on the same v0.16 release line as the React and web-client packages,
+  and confirm its version against that package manifest or your app's
+  `package.json`.
+- **When you bump, do a clean install with the package manager the project
+  actually uses.** The web-sdk itself is pnpm-only (`rm -rf node_modules
+  pnpm-lock.yaml && pnpm install`); the example app declares
+  `packageManager: "pnpm@9.15.4"` with `engines.node >= 20` and
+  `engines.pnpm >= 9`.
+
+## The Web Worker Shim (`useWorker`)
+
+By default the SDK spawns a Web Worker and runs WASM calls off the main thread
+(`ClientOptions.useWorker` defaults to `true`). This matters for a Vite app
+because the worker is loaded via `new Worker(new URL(...), { type: "module" })`,
+which is why the plugin sets `worker.format: "es"`.
+
+Set `useWorker: false` when:
+
+- You pass a `CallbackProver` via `TransactionProver.newCallbackProver(jsFn)`.
+  The worker boundary serializes the prover with `TransactionProver.serialize()`,
+  which has no encoding for the callback variant and silently downgrades it to
+  `"local"` — your callback would never fire.
+- You embed the client in a single-WebView native shell (Capacitor host, Tauri,
+  Electron preload), where the UI thread isn't competing with the WASM thread
+  anyway.
+
+`MidenProvider` forwards `config.useWorker` straight into
+`WebClient.createClient(...)` / `WebClient.createClientWithExternalKeystore(...)`,
+so React consumers set it on the provider config.
 
 ## Production Deployment Headers
 
-These headers apply **only if you ship the MT WASM variant** (`/mt` or `/mt/lazy`). The default ST build needs none of this — skip the whole section if you're on the default imports. If you are on MT, the COOP/COEP headers must be set on the production server: `midenVitePlugin({ crossOriginIsolation: true })` only emits them on the Vite dev server (`vite`) and the Vite preview server (`vite preview`) — it does not touch your real production host. Configure the headers separately on nginx/Vercel/Cloudflare/etc.
+These headers apply **only if you ship the MT WASM variant** (`/mt` or
+`/mt/lazy`). The default ST build needs none of this. If you are on MT, the
+COOP/COEP headers must be set on the production server:
+`midenVitePlugin({ crossOriginIsolation: true })` only emits them on the Vite dev
+server (`vite`) and the Vite preview server (`vite preview`) — it does not touch
+your real production host.
+
+`crates/web-client/README.md` ("Setting cross-origin isolation headers") is the
+maintained reference and covers more hosts than the snippets below, including
+Next.js (`next.config.mjs` `headers()`), Express / generic Node
+(`res.setHeader`), and MV3 browser-extension manifests
+(`"cross_origin_opener_policy": { "value": "same-origin" }`).
 
 ### Nginx
 ```nginx
@@ -93,48 +262,66 @@ add_header Cross-Origin-Embedder-Policy require-corp;
   Cross-Origin-Embedder-Policy: require-corp
 ```
 
-### WASM MIME Type
-Ensure your server serves `.wasm` files with `application/wasm` MIME type.
-
 ## COOP/COEP Gotchas
 
-These gotchas only apply once you've enabled cross-origin isolation for the MT build — the default ST build sets no such headers and is unaffected. When COOP `same-origin` + COEP `require-corp` are in force, they break:
+These apply only once you've enabled cross-origin isolation for the MT build —
+the default ST build sets no such headers and is unaffected. `require-corp`
+blocks any cross-origin resource (images, fonts, iframes, scripts) that doesn't
+carry `Cross-Origin-Resource-Policy: cross-origin` or appropriate CORS. In
+practice that breaks:
+
 - **Third-party iframes** (YouTube embeds, Twitter embeds, analytics)
 - **External scripts** without CORS headers
-- **OAuth popups** from different origins
+- **OAuth popups** from different origins (COOP `same-origin` nullifies
+  `window.opener`)
 
-Workaround: Use `credentialless` for COEP if you need cross-origin resources:
-```
-Cross-Origin-Embedder-Policy: credentialless
-```
+Treat it as a deployment decision and opt in only when you understand your
+page's resource graph.
 
-Note: `credentialless` provides weaker isolation but allows most cross-origin resources.
+If you cannot set the headers at all (CDN, hosting provider that doesn't allow
+header injection), the documented escape hatch is the COI service-worker shim
+pattern (`gzuidhof/coi-serviceworker`): a small same-origin service worker
+intercepts fetches and re-injects the headers on the way back. The SDK
+deliberately does not bundle it, because installing a service worker into a
+consumer's app is intrusive — adopt it consciously.
 
 ## TypeScript Compatibility
 
-Standard Vite-compatible tsconfig settings work with Miden. The only actual constraint is ES2020+ for `bigint` support:
+Standard Vite-compatible tsconfig settings work with Miden. The real constraint
+is an ES2020+ target, because the SDK's public types use `bigint` (asset
+amounts, `Felt` values, and every `JsU64` return are JS `BigInt`s). The shipped
+example's tsconfig is the reference:
 
 ```json
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
-    "moduleResolution": "bundler"
+    "moduleResolution": "bundler",
+    "useDefineForClassFields": true,
+    "jsx": "react-jsx",
+    "isolatedModules": true,
+    "strict": true,
+    "noEmit": true
   }
 }
 ```
 
-`module: "ESNext"` and `moduleResolution: "bundler"` are standard Vite defaults, not Miden-specific requirements. If you're using the Vite-generated tsconfig, no changes are needed beyond ensuring `target` is ES2020+.
+`module: "ESNext"` and `moduleResolution: "bundler"` are standard Vite defaults,
+not Miden-specific requirements. If you're using the Vite-generated tsconfig, no
+changes are needed beyond ensuring `target` is ES2020+.
 
 ## Troubleshooting
 
 | Issue | Cause | Fix |
 |-------|-------|-----|
 | "SharedArrayBuffer is not defined" (MT build only) | Importing `/mt` or `/mt/lazy` on a page that isn't cross-origin-isolated | Set `midenVitePlugin({ crossOriginIsolation: true })` and add the COOP/COEP headers on your production host; or switch back to the default ST imports, which don't need them |
-| WASM module not found | SDK not configured correctly | Ensure `midenVitePlugin()` is in plugins array |
-| "Top-level await not supported" | Missing plugin setup | Ensure `midenVitePlugin()` is in plugins array |
-| WASM init hangs | COEP blocking WASM fetch | Check network tab for blocked requests; verify COOP/COEP headers are present |
-| Build succeeds but WASM fails at runtime | Wrong MIME type | Serve .wasm as application/wasm |
-| "recursive use of an object" | Concurrent WASM access | Use runExclusive() from useMiden() |
-| Double initialization in dev | React StrictMode | Use MidenProvider (handles this internally) |
+| Direct MT client with `useWorker: false` is no faster than ST | Its current-thread WASM instance has no initialized rayon pool | Call and await `initThreadPool(navigator.hardwareConcurrency)` in the same realm before using that direct client; do not add this to the default worker-backed path |
+| WASM module not found | SDK not configured correctly | Ensure `midenVitePlugin()` is in the plugins array |
+| "Top-level await not supported" | Missing plugin setup | Ensure `midenVitePlugin()` is in the plugins array (it sets `build.target: "esnext"` and the esbuild target) |
+| Module evaluation hangs on load (Capacitor WKWebView, Next.js SSR) | The default eager entry awaits WASM at module top level; TLA blocks SSR module evaluation and hangs in Capacitor's `capacitor://localhost` scheme handler | Import `@miden-sdk/miden-sdk/lazy` (no top-level await) and `await MidenClient.ready()` before touching any wasm-bindgen constructor |
+| WASM init hangs in the browser | COEP blocking the WASM fetch | Check the network tab for blocked requests; verify the COOP/COEP headers are actually present |
+| "recursive use of an object" | Concurrent WASM access | Use `runExclusive()` from `useMiden()` |
+| Double initialization in dev | React StrictMode | Use `MidenProvider` (it queues init through `runExclusive` and handles the StrictMode double mount internally) |
+| A VM assertion failure reports only an error code, no message | Production builds strip MASM debug metadata (source spans and `assert.err` text) from the embedded Miden packages, cutting the ST binary from 27.4 MB to 18.8 MB | Reproduce against a dev build (`MIDEN_WEB_DEV=true`), which keeps full diagnostics |
