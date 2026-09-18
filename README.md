@@ -57,7 +57,8 @@ API, so they are deliberately not published to npm.
 - **masm-inline-comments** – Inline commenting conventions for .masm files (lowercase, avoid over-commenting)
 - **masm-doc-comments** – Procedure documentation format (`#!` doc blocks with Inputs, Outputs, Where, Panics, Invocation)
 - **masm-padding** – Stack padding conventions for `call` vs `exec` procedures
-- **masm-formatting** – Orchestrator covering capitalization, `(N)` span notation, cross-repo doc-comment divergences, `Cycles:`, and chained assertion style
+- **masm-formatting** – Orchestrator covering capitalization, `(N)` span notation, cross-repo doc-comment divergences, `Cycles:`, chained assertion style, and the `miden-format` formatter
+- **masm-proc-type-signatures** – Type-signature conventions for `pub proc`: parameter and return types, semantic type aliases, struct/array/tuple types, and how a signature maps onto the operand stack
 
 ### Miden Client (Rust)
 
