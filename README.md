@@ -2,6 +2,15 @@
 
 Skills and commands for AI agents when working with the Miden ecosystem.
 
+**Scope.** This repository is canonical for knowledge that spans the ecosystem:
+Miden Assembly, the Rust SDK, protocol concepts, and the general-purpose slash
+commands. Anything describing the `@miden-sdk/*` JavaScript API now lives in
+[`0xMiden/web-sdk`](https://github.com/0xMiden/web-sdk) and ships inside the npm
+packages, so it stays matched to the version a project has installed — see
+[Web SDK and React](#web-sdk-and-react--now-shipped-with-the-sdk-itself) below.
+A good rule of thumb: if a skill would mention `@miden-sdk/…`, it belongs there;
+otherwise it belongs here.
+
 ## Skills
 
 Skills are applied automatically when the agent detects relevant tasks. Each skill is a `SKILL.md` file in a named directory under `skills/`.
@@ -15,14 +24,33 @@ Skills are applied automatically when the agent detects relevant tasks. Each ski
 - **rust-sdk-pitfalls** – Critical safety rules: felt arithmetic, comparison operators, stack limits, argument limits, storage naming, no-std
 - **rust-sdk-source-guide** – Advanced development guide: AI practices (Plan Mode, verification-driven development, sub-agents, context engineering) and Miden source repository map for discovering patterns beyond basic skills
 
-### React Frontend Development
+### Web SDK and React — now shipped with the SDK itself
 
-- **react-sdk-patterns** – Complete `@miden-sdk/react` hook API reference: MidenProvider, query hooks, mutation hooks, transaction stages, signer integration, utilities
-- **frontend-pitfalls** – Critical frontend pitfalls: client-readiness gating, multi-step WASM sequences and pointer lifetimes, COOP/COEP headers, BigInt boundaries, Bech32 network prefixes, IndexedDB state loss, the Web Worker shim, and structured error codes
-- **vite-wasm-setup** – Vite + WASM configuration: required plugins, deployment headers (Nginx, Vercel, Cloudflare), TypeScript config, troubleshooting
-- **frontend-source-guide** – Advanced frontend development guide: AI practices and miden-client source repository map for discovering patterns beyond basic skills
-- **signer-integration** – Integrating external signers (Para, Turnkey, MidenFi wallet adapter) and building custom signers for Miden React frontends
-- **testing-patterns** – Testing conventions: Vitest + testing-library setup, `@miden-sdk/react` module mocking, fixtures, TDD workflow for Miden React components
+Frontend skills are no longer kept here. They live in
+[`0xMiden/web-sdk`](https://github.com/0xMiden/web-sdk) and ship inside the npm
+packages they document, so they are always version-matched to the SDK a project
+actually has installed:
+
+| Skill | Read it at |
+|---|---|
+| `web-client-usage`, `frontend-pitfalls`, `signer-integration`, `frontend-source-guide` | `node_modules/@miden-sdk/miden-sdk/skills/` |
+| `react-sdk-patterns`, `testing-patterns` | `node_modules/@miden-sdk/react/skills/` |
+| `vite-wasm-setup` | `node_modules/@miden-sdk/vite-plugin/skills/` |
+
+To pull them into a project, run `npm create @miden-sdk@latest`. It writes a
+pointer into the project's `AGENTS.md`, copies the skills into
+`.claude/skills/`, and adds a `prepare` script so they refresh on every install.
+
+**Why they moved.** These skills describe the `@miden-sdk/*` API. Kept in a
+separate repository, nothing tied a skill to the API it documented, so an API
+change and its documentation were always two PRs — and the copies here and in
+`0xMiden/frontend-template` had drifted from each other and from the code.
+Beside the source, they change in the same PR as the API. See
+[web-sdk#310](https://github.com/0xMiden/web-sdk/pull/310).
+
+`idxdb-patterns` and `wasm-bridge` moved for the same reason and now live in
+web-sdk's own `.claude/skills/`. They document internals rather than the public
+API, so they are deliberately not published to npm.
 
 ### Miden Assembly
 
@@ -32,12 +60,9 @@ Skills are applied automatically when the agent detects relevant tasks. Each ski
 - **masm-formatting** – Orchestrator covering capitalization, `(N)` span notation, cross-repo doc-comment divergences, `Cycles:`, chained assertion style, and the `miden-format` formatter
 - **masm-proc-type-signatures** – Type-signature conventions for `pub proc`: parameter and return types, semantic type aliases, struct/array/tuple types, and how a signature maps onto the operand stack
 
-### Miden Client (Web SDK & Internals)
+### Miden Client (Rust)
 
 - **rust-client-patterns** – Rust conventions for the `miden-client` crate: error handling (`thiserror` + `ErrorHint`), `Store` trait (adding methods across `SqliteStore`/`WebStore` with cross-platform `async_trait`), `Client<AUTH>` generic pattern with the `Keystore` super-trait, `no_std` imports (`alloc::`/`core::`), `ClientBuilder` network constructors (`for_testnet()`, `for_devnet()`, `for_localhost()`), and section header formatting (`// ===` top-level, `// ---` subsections)
-- **wasm-bridge** – Rust↔JS WASM boundary conventions for the `web-client` crate: `#[wasm_bindgen]` method exposure with `js_name`, newtype wrappers with `From` conversions, `js_error_with_context` error chaining with `ErrorHint`, promise handling (`await_js`/`await_ok`/`await_js_value`), data transfer objects with `getter_with_clone`, JS function imports, and the `MidenClient`/`WasmWebClient` (`WebClient`) two-layer JS API
-- **idxdb-patterns** – IndexedDB/Dexie persistence conventions for the `idxdb-store` crate: Dexie transactions (`db.dexie.transaction("rw", tables, ...)`), schema interfaces (`IAccount`, `IAccountCode`), database registry (`getDatabase`/`openDatabase`), `logWebStoreError` error handling, forward-only state updates, and the TS→JS dual-commit build workflow
-- **web-client-usage** – Developer-facing patterns for using the `@miden-sdk/miden-sdk` npm package: `MidenClient.create()` initialization, the resource-based API (`client.accounts`, `client.transactions`, `client.notes`, `client.pswap`, `client.tags`, `client.settings`, `client.compile`, `client.keystore`), sync ordering, type conversions (`AccountId.fromHex`, `BigInt` amounts, `NoteVisibility`), transaction flows (mint, send, consume, swap, custom contracts), private note transport, querying, import/export, and pitfall avoidance
 
 ## Commands
 
