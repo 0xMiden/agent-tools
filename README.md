@@ -347,8 +347,8 @@ Findings are graded by severity: `[CRITICAL]` (loss of funds / key compromise), 
 To make all commands available globally across all projects:
 
 ```bash
-git clone https://github.com/0xMiden/agent-skills.git
-cp agent-skills/commands/*.md ~/.claude/commands/
+git clone https://github.com/0xMiden/agent-tools.git
+cp agent-tools/commands/*.md ~/.claude/commands/
 ```
 
 ### Claude Code (Project-Level)
@@ -356,25 +356,25 @@ cp agent-skills/commands/*.md ~/.claude/commands/
 To make commands available only in a specific project:
 
 ```bash
-git clone https://github.com/0xMiden/agent-skills.git
+git clone https://github.com/0xMiden/agent-tools.git
 mkdir -p /path/to/your/project/.claude/commands
-cp agent-skills/commands/*.md /path/to/your/project/.claude/commands/
+cp agent-tools/commands/*.md /path/to/your/project/.claude/commands/
 ```
 
 ### Skills (Cursor / Claude Code / Codex)
 
 ```bash
-git clone https://github.com/0xMiden/agent-skills.git
-ln -sf "$(pwd)/agent-skills/skills" ~/.cursor/skills    # Cursor
-ln -sf "$(pwd)/agent-skills/skills" ~/.claude/skills     # Claude Code
-ln -sf "$(pwd)/agent-skills/skills" ~/.codex/skills      # Codex
+git clone https://github.com/0xMiden/agent-tools.git
+ln -sf "$(pwd)/agent-tools/skills" ~/.cursor/skills    # Cursor
+ln -sf "$(pwd)/agent-tools/skills" ~/.claude/skills     # Claude Code
+ln -sf "$(pwd)/agent-tools/skills" ~/.codex/skills      # Codex
 ```
 
 **Note:** If `~/.cursor/skills` already exists with other skills, or you want to selectively import skills, symlink individual skills instead:
 
 ```bash
 cd ~/{.cursor/.claude/.codex}/skills
-ln -sf /path/to/agent-skills/skills/masm-padding .
+ln -sf /path/to/agent-tools/skills/masm-padding .
 ```
 
 ## Usage
