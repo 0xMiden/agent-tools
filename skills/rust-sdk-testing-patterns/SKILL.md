@@ -5,9 +5,9 @@ description: Guide to testing Miden smart contracts with MockChain. Covers test 
 
 # Miden Testing Patterns (MockChain)
 
-These patterns target `miden-protocol` / `miden-standards` / `miden-testing` `0.16.0-rc.9` with
-`miden-client` `0.16.0-rc.5`. Write the full pre-release strings — Cargo does not match a
-pre-release against a plain `"0.16"` requirement.
+These patterns target stable `miden-protocol` / `miden-standards` / `miden-testing` 0.17.1
+with `miden-client` 0.17.2 and VM/package crates 0.35.0. See `rust-sdk-source-guide` for the
+contract toolchain; the host and guest crates have different version numbers.
 
 `MockChain` and its builders live in `miden-testing`, which is also re-exported as
 `miden_client::testing` behind the client's optional `testing` feature. A test crate must either
@@ -78,12 +78,11 @@ The 4th argument is `token_supply: Option<u64>` (an explicit `None` is treated a
 
 Build contracts **out of process** with the `cargo miden build` CLI and load the resulting `.masp`
 package in the test. This keeps contract compilation separate from the test binary's client
-dependencies. At `sdk/v0.14.0`, the compiler's internal matrix uses
-`miden-protocol =0.16.0-rc.4` and the VM `0.29` line; do not replace the test crate's client pins
-with that internal matrix.
+dependencies. Use SDK 0.15.0 and `cargo-miden` 0.11.0 for the guest build, with VM/package
+crates 0.35.0 on the host. Do not add the compiler to the integration crate's dependency graph.
 
 Package artefacts: the extension is `.masp` (`Package::EXTENSION`), magic `MASP\0`, package format
-version `[6, 0, 0]`, MAST wire version `[0, 0, 4]`. There is no `.masl`.
+version `[7, 0, 0]`, MAST wire version `[0, 0, 4]`. There is no `.masl`. Rebuild every package after upgrading from v0.16; old package bytes are incompatible.
 
 ### 5. Create Account with Storage
 
@@ -125,7 +124,7 @@ init_storage_data.insert_value(
     Word::default(),
 )?;
 
-let component = AccountComponent::from_package(&bank_package, &init_storage_data)?;
+let component = AccountComponent::from_package(bank_package, &init_storage_data)?;
 
 let account_builder = AccountBuilder::new([3u8; 32])
     .account_type(AccountType::Public)
@@ -140,7 +139,7 @@ let bank_account = builder.add_account_from_builder(
 
 **There is no `AccountBuilder::with_auth_component`.** Auth components are installed like any other
 component, via `.with_component(..)` / `.with_components(..)`. The builder's surface is
-`new([u8; 32])`, `version`, `account_type`, `with_asset_callbacks`, `with_component(s)`,
+`new([u8; 32])`, `version`, `account_type`, `enable_asset_callbacks`, `with_component(s)`,
 `with_assets`, `nonce`, `storage_schemas`, `build`, `build_existing`.
 
 For map slots, seed entries with `init_storage_data.insert_map_entry(slot_name, key, value)?`.
@@ -168,14 +167,14 @@ For map slots, seed entries with `init_storage_data.insert_map_entry(slot_name, 
 
 ### 6. Create Notes
 
-Build a note with `NoteBuilder`, seeding the `RandomCoin` from the note-script root:
+Build a note with `NoteBuilder` and a seeded `rand` 0.10 RNG for reproducible tests:
 
 ```rust
-use miden_client::{asset::FungibleAsset, crypto::RandomCoin, note::NoteScript, Felt, Word};
+use miden_client::{asset::FungibleAsset, Felt};
+use rand::{rngs::StdRng, SeedableRng};
 use miden_standards::testing::note::NoteBuilder;
 
-let note_script = NoteScript::from_package(note_package.as_ref())?;
-let mut note_rng = RandomCoin::new(Word::from(note_script.root()));
+let mut note_rng = StdRng::seed_from_u64(0);
 let note = NoteBuilder::new(sender.id(), &mut note_rng)
     .package((*note_package).clone())
     .add_assets([FungibleAsset::new(faucet.id(), 50)?.into()])
@@ -183,7 +182,7 @@ let note = NoteBuilder::new(sender.id(), &mut note_rng)
     .build()?;
 ```
 
-`NoteBuilder::new(sender: AccountId, rng: T)` takes the RNG **by value**; `&mut RandomCoin` works
+`NoteBuilder::new(sender: AccountId, rng: T)` takes the RNG **by value**; `&mut StdRng` works
 because `&mut T: Rng`. Other builder methods: `package`, `script`, `code`, `note_type`, `tag`,
 `add_assets`, `note_storage`, `serial_number`, `attachment`, `advice_map`,
 `dynamically_linked_packages`, `source_manager`, `build`.
@@ -192,8 +191,8 @@ because `&mut T: Rng`. Other builder methods: `package`, `script`, `code`, `note
 > `.tag(NoteTag::with_account_target(account.id()).into())`.
 
 > `NoteScript::from_package(&Package)` requires the package to have exactly one `@note_script`
-> export. `NoteScript::root()` returns a `NoteScriptRoot` newtype, and `RandomCoin::new` needs a
-> `Word`, so convert explicitly with `Word::from(...root())`.
+> export. `NoteScript::root()` returns a `NoteScriptRoot` newtype; convert with `Word::from(..)`
+> when a word is needed. The client no longer re-exports `RandomCoin`.
 
 > `Felt::new(u64)` is **fallible** — it returns `Result<Felt, FeltFromIntError>`. `note_storage`
 > takes `impl IntoIterator<Item = Felt>`, so build each felt with the infallible
@@ -236,6 +235,10 @@ mock_chain.prove_next_block()?;
 `From<Account>`. Pass an `Account` (rather than an id) when chaining transactions against evolving
 in-memory state, and for private accounts.
 
+Private accounts seeded at genesis are not retained in the committed-account map. Keep the
+`Account`, pass it to `build_transaction`, and apply each execution's patch to it. Use
+`committed_account(id)` only for public accounts.
+
 Input notes are **not** positional arguments. Attach them with `.authenticated_input_note(NoteId)`,
 `.authenticated_input_notes(..)`, `.unauthenticated_input_note(Note)` or
 `.unauthenticated_input_notes(..)`.
@@ -244,15 +247,16 @@ Input notes are **not** positional arguments. Attach them with `.authenticated_i
 is `async`, and returns `Result<ExecutedTransaction, TransactionExecutorError>`.
 
 Other `MockTransactionBuilder` methods: `tx_script`, `tx_script_args`, `auth_args`,
-`extend_note_args`, `reference_block`, `foreign_accounts`, `extend_advice_inputs`,
+`extend_note_args`, `reference_block`, `required_block`, `foreign_accounts`, `extend_advice_inputs`,
 `add_advice_map_entry`, `authenticator`, `add_signature`, `add_note_script`, `send_notes_script`,
 `expected_output_note(s)`, `with_source_manager`.
 
 ### 9. Execute with Transaction Script
 
-`TransactionScript::from_package(&package)?` handles a `kind = "tx-script"` package directly: if the
-package is a program it uses the entrypoint, otherwise it looks for the single procedure carrying
-the `transaction_script` attribute, which the compiler emits on tx-script exports.
+`TransactionScript::from_package(&package)?` takes a library package with exactly one
+`@transaction_script` export, as emitted by a `kind = "tx-script"` compiler project.
+Executable (`begin ... end`) packages are rejected. `NoteScript::from_package` likewise needs
+a library package with exactly one `@note_script` export.
 
 ```rust
 use miden_client::transaction::TransactionScript;
@@ -272,8 +276,9 @@ mock_chain.prove_next_block()?;
 let updated_account = mock_chain.committed_account(account.id())?;
 ```
 
-`TransactionScript::from_parts(Arc<MastForest>, MastNodeId)` exists, but it is not the path for
-compiler-produced tx-script packages — use the package-based construction shown above.
+`TransactionScript::from_parts(Arc<MastForest>, MastNodeId)` now returns a `Result`; handle
+validation errors. It is not the path for compiler-produced tx-script packages — use the
+package-based construction shown above.
 
 ### 10. Verify Storage State
 
@@ -349,19 +354,19 @@ are the account-update path. If you instead re-fetch via `mock_chain.committed_a
 ## MockChain Block Numbering
 
 Genesis is block 0. Each `prove_next_block()` advances the block number by 1; `prove_next_block_at(timestamp)`
-does the same at a chosen timestamp. In contract code, `tx::get_block_number()` returns the
+does the same at a chosen timestamp. In contract code, `tx::get_reference_block_number()` returns the
 **reference block** — the last proven block at the time the transaction started, not the block the
 transaction will be included in.
 
-> `tx::get_block_number()` returns a **`BlockNumber`**, not a `Felt`. Compare it directly against
+> `tx::get_reference_block_number()` returns a **`BlockNumber`**, not a `Felt`. Compare it directly against
 > another `BlockNumber`; convert a felt read out of note storage with `BlockNumber::try_from(felt)`.
 
 ## Asset-Bearing Note Example
 
 1. Create a `FungibleAsset` from a faucet ID and amount, e.g. `FungibleAsset::new(faucet.id(), 50)?`
-   (the amount parameter is still `u64`), and wrap it into `NoteAssets::new(vec![Asset::Fungible(asset)])?`
+   (the amount parameter is still `u64`), and wrap it into `NoteAssets::new(vec![asset.into()])?`
    — or pass it via `NoteBuilder::add_assets`.
-2. Seed a `RandomCoin` from `Word::from(NoteScript::from_package(note_package.as_ref())?.root())`.
+2. Seed a test RNG with `StdRng::seed_from_u64(0)`; for live notes use `client.rng()`.
 3. Pass any note inputs into `note_storage(...)?`, building each felt with the infallible
    `Felt::from(_u32)` for in-range literals or checked `Felt::new(n)?` for arbitrary `u64` inputs.
 4. Finish with `.package((*note_package).clone()).build()?`.
@@ -372,14 +377,15 @@ The faucet must be set up first (see Step 3) and the sender wallet must hold suf
 ## Key Dependencies
 
 ```toml
-miden-client    = "0.16.0-rc.5"   # with features = ["testing"] for miden_client::testing
-miden-protocol  = "0.16.0-rc.9"
-miden-standards = "0.16.0-rc.9"
-miden-testing   = "0.16.0-rc.9"
+miden-client    = "0.17.2"   # with features = ["testing"] for miden_client::testing
+miden-protocol  = "0.17.1"
+miden-standards = "0.17.1"
+miden-testing   = "0.17.1"
+rand            = "0.10"    # StdRng / SeedableRng
 ```
 
-The contracts a test builds depend on the guest SDK `miden = "0.14.0"`, built with
-`cargo-miden` / `midenc` `0.10.0` on the pinned nightly (`nightly-2026-09-01`, target
+The contracts a test builds depend on the guest SDK `miden = "0.15.0"`, built with
+`cargo-miden` / `midenc` `0.11.0` on the pinned nightly (`nightly-2026-09-01`, target
 `wasm32-wasip2`). See Step 4 for the out-of-process build pattern.
 
 ## Validation Checklist
@@ -391,7 +397,7 @@ The contracts a test builds depend on the guest SDK `miden = "0.14.0"`, built wi
 - [ ] Storage slot names follow `<package_name>::<interface_segment>::<field_name>`
 - [ ] Value slots without a schema default are seeded via `InitStorageData::insert_value(StorageValueName::from_slot_name(&slot), ..)`; `StorageValue<Word>` slots get a `Word`, not a bare integer
 - [ ] Contracts are built out of process with `cargo miden build`, not by depending on `cargo-miden`
-- [ ] `NoteScript::root()` converted with `Word::from(..)` before seeding `RandomCoin`
+- [ ] Tests use a seeded `rand` 0.10 RNG; live note randomness comes from `client.rng()`
 - [ ] `NoteBuilder::tag(..)` is passed a `u32`
 - [ ] Note-storage felts built with infallible `Felt::from(_u32)` or checked `Felt::new(n)?` for arbitrary `u64` inputs
 - [ ] `Note::new(..)` is passed a `PartialNoteMetadata` (not `NoteMetadata`)
@@ -402,4 +408,5 @@ The contracts a test builds depend on the guest SDK `miden = "0.14.0"`, built wi
 - [ ] Map reads pass a `StorageMapKey`, not a `Word`
 - [ ] `FungibleAsset::amount()` compared as `AssetAmount`, not a bare integer
 - [ ] Notes added to `MockChainBuilder` via `add_output_note(RawOutputNote::Full(..))` before `build()` (no `?` — it returns `()`)
+- [ ] Private account state is kept and patched locally; it is not fetched with `committed_account`
 - [ ] Faucet set up before creating assets

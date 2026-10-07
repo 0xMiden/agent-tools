@@ -11,6 +11,25 @@ packages, so it stays matched to the version a project has installed — see
 A good rule of thumb: if a skill would mention `@miden-sdk/…`, it belongs there;
 otherwise it belongs here.
 
+These skills target **Miden v0.17**, using the
+[merged migration guide (docs#375)](https://github.com/0xMiden/docs/pull/375)
+and the released sources:
+
+| Layer | Version |
+|---|---|
+| midenup toolchain channel | `0.17.0` |
+| Guest Rust SDK (`miden`, build-script support) | `0.15.0` |
+| Compiler (`midenc`, `cargo-miden`) | `0.11.0` |
+| Protocol, standards, testing | `0.17.1` |
+| Rust client and SQLite store | `0.17.2` |
+| VM, assembler, MAST packages | `0.35.0` |
+
+Rebuild contracts for package format `7.0.0`. v0.16 stores, account/note exports,
+proofs, and serialized requests cannot be reused directly. The
+[`rust-sdk-source-guide`](skills/rust-sdk-source-guide/SKILL.md) maps the release
+tags; [`rust-client-patterns`](skills/rust-client-patterns/SKILL.md) covers client
+sync, fees, and multisig migration.
+
 ## Skills
 
 Skills are applied automatically when the agent detects relevant tasks. Each skill is a `SKILL.md` file in a named directory under `skills/`.
@@ -21,6 +40,7 @@ Skills are applied automatically when the agent detects relevant tasks. Each ski
 - **rust-sdk-testing-patterns** – MockChain testing workflow, account/note creation, storage verification, and multi-step test patterns
 - **local-node-validation** – Validate contracts against a local Miden node after MockChain tests pass: node setup, Rust binary adaptation, state verification, and troubleshooting
 - **miden-concepts** – Miden architecture from a developer perspective: actor model, accounts, notes, transactions, assets, privacy
+- **account-code-upgrades** – v0.17 account upgrades: authority selection, direct client requests, network UpgradeNote delivery, storage compatibility, and result validation
 - **rust-sdk-pitfalls** – Critical safety rules: felt arithmetic, comparison operators, stack limits, argument limits, storage naming, no-std
 - **rust-sdk-source-guide** – Advanced development guide: AI practices (Plan Mode, verification-driven development, sub-agents, context engineering) and Miden source repository map for discovering patterns beyond basic skills
 
