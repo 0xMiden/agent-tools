@@ -5,6 +5,9 @@ description: Complete guide to writing Miden smart contracts with the Rust SDK. 
 
 # Miden Rust SDK Patterns
 
+Targets contract SDK `miden` 0.15.0 and `cargo-miden` / `midenc` 0.11.0 for Miden v0.17.
+See `rust-sdk-source-guide` for the compatible host dependencies and tagged sources.
+
 ## Three Contract Types
 
 ### Account Component (three-part pattern)
@@ -87,7 +90,7 @@ supported-types = ["RegularAccountUpdatableCode"]
 
 `supported-types` also accepts `"RegularAccountImmutableCode"` and the faucet kinds `["FungibleFaucet", "NonFungibleFaucet"]`.
 
-The `Cargo.toml` needs `edition = "2024"`, `crate-type = ["cdylib"]`, and the `miden` dependency. Use the full final-release version to make the intended SDK line explicit. `miden = "0.14.0"` is still a Cargo caret requirement; use `=0.14.0` only when exact resolution is required:
+The `Cargo.toml` needs `edition = "2024"`, `crate-type = ["cdylib"]`, and the `miden` dependency. Use the full final-release version to make the intended SDK line explicit. `miden = "0.15.0"` is still a Cargo caret requirement; use `=0.15.0` only when exact resolution is required:
 
 ```toml
 [package]
@@ -99,7 +102,7 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-miden = "0.14.0"
+miden = "0.15.0"
 ```
 
 Contracts build on the pinned nightly toolchain (`channel = "nightly-2026-09-01"`, `targets = ["wasm32-wasip2"]`); the compiler workspace declares Rust 1.99 as its MSRV.
@@ -140,6 +143,13 @@ impl P2idNote {
 ```
 
 A `#[note]` struct with fields is auto-decoded from `active_note::get_storage()`. The decoder is strict: it calls `ensure_eof()`, so surplus felts in the note's storage fail with `FeltReprError::TrailingData`. A zero-sized note type skips `get_storage()` entirely.
+
+SDK 0.15 emits a WIT storage schema: use a unit struct or named fields with a
+fixed layout. Tuple structs and `Vec` fields are rejected. Preserve field order
+when converting a tuple struct; use named records and `Option` for fixed optional
+positions. Keep one `#[note]` struct per linked artifact, including dependencies.
+For `#[export_type]`, different Rust types must have distinct WIT names, and
+`__MIDEN_EXPORT_TYPE_SHAPE` is reserved for the macro.
 
 Reference: `examples/p2id-note/src/lib.rs`, `examples/p2ide-note/src/lib.rs`, `examples/counter-note/src/lib.rs`.
 
@@ -209,13 +219,13 @@ See the rust-sdk-pitfalls skill (P5) for more on slot naming.
 
 | Module | Key Functions | Purpose |
 |--------|--------------|---------|
-| `native_account::` | `add_asset(Asset) -> Word`, `remove_asset(Asset) -> Word`, `incr_nonce() -> Nonce`, `get_id() -> AccountId`, `get_initial_asset(Word) -> Word`, `get_initial_commitment() -> Word`, `was_procedure_called(Word) -> bool`, `compute_delta_commitment() -> Word` | Modify / read the native account |
-| `active_account::` | `get_id() -> AccountId`, `get_nonce() -> Nonce`, `get_asset(asset_key: Word) -> Word`, `has_asset(asset_id: Word) -> bool`, `get_vault_root() -> Word`, `get_num_procedures() -> u32`, `get_procedure_root(u32) -> Word`, `has_procedure(Word) -> bool` | Query the active account |
+| `native_account::` | `add_asset(Asset) -> Word`, `remove_asset(Asset) -> Word`, `incr_nonce() -> Nonce`, `get_id() -> AccountId`, `get_initial_asset(AssetId) -> Word`, `get_initial_commitment() -> Word`, `was_procedure_called(Word) -> bool`, `compute_delta_commitment() -> Word` | Modify / read the native account |
+| `active_account::` | `get_id() -> AccountId`, `get_nonce() -> Nonce`, `get_asset(asset_id: AssetId) -> Word`, `has_asset(asset_id: AssetId) -> bool`, `get_vault_root() -> Word`, `get_num_procedures() -> u32`, `get_procedure_root(u32) -> Word`, `has_procedure(Word) -> bool` | Query the active account |
 | `active_note::` | `get_storage() -> Vec<Felt>`, `get_initial_assets() -> Vec<Asset>`, `get_sender() -> AccountId`, `get_recipient() -> Recipient`, `get_metadata() -> NoteMetadata`, `find_attachment(Felt) -> Option<u32>`, `write_attachment_to_memory(u32) -> Vec<Word>` | Query the note being consumed |
 | `note::` | `build_recipient(Word, Word, Vec<Felt>) -> Recipient` | Build note recipients from serial number, script root, and note storage |
 | `output_note::` | `create(Tag, NoteType, Recipient) -> NoteIdx`, `add_asset(Asset, NoteIdx)`, the `*_attachment` family | Create output notes |
 | `faucet::` | `mint(Asset)`, `burn(Asset)` | Move assets in and out of existence |
-| `tx::` | `get_block_number() -> BlockNumber`, `get_block_timestamp() -> u32`, `get_num_input_notes() -> u32`, `get_num_output_notes() -> u32`, `get_expiration_block_delta() -> u16`, `update_expiration_block_delta(u16)`, `execute_foreign_procedure(..)` | Transaction context and FPI |
+| `tx::` | `get_reference_block_number() -> BlockNumber`, `get_block_timestamp() -> u32`, `get_num_input_notes() -> u32`, `get_num_output_notes() -> u32`, `get_expiration_block_delta() -> u16`, `update_expiration_block_delta(u16)`, `execute_foreign_procedure(..)` | Transaction context and FPI |
 | Intrinsics | `assert(Felt)`, `assertz(Felt)`, `assert_eq(Felt, Felt)` | Validation (`assert` fails unless the felt equals 1; `assertz` fails unless it equals 0) |
 
 `add_asset`, `remove_asset` and the `active_account` queries are also trait methods auto-implemented on the `#[component_storage]` struct, so the idiomatic body is `self.add_asset(asset)` rather than the free function.
@@ -228,9 +238,9 @@ See the rust-sdk-pitfalls skill (P5) for more on slot naming.
 
 ### Balances and asset construction
 
-There is no `active_account::get_balance`. Read the asset value word with `active_account::get_asset(asset_key)` (or `native_account::get_initial_asset(asset_key)` for the pre-transaction value) and take the fungible amount from it; test membership with `active_account::has_asset(asset_id)`.
+There is no `active_account::get_balance`. Read the asset value word with `active_account::get_asset(asset_id)` (or `native_account::get_initial_asset(asset_id)` for the pre-transaction value) and take the fungible amount from it; test membership with `active_account::has_asset(asset_id)`.
 
-There is also no in-transaction asset construction: `faucet::create_fungible_asset`, `create_non_fungible_asset`, `has_callbacks` and the whole `asset` module are gone. `faucet::mint` and `faucet::burn` take an already-built `Asset`.
+There is also no in-transaction asset construction: `faucet::create_fungible_asset`, `create_non_fungible_asset` and `has_callbacks` are gone. The `miden::asset` module provides `id_into_faucet_id`, `id_into_asset_class`, and `id_into_composition` for reading an `AssetId`. `faucet::mint` and `faucet::burn` take an already-built `Asset`.
 
 ## Asset Handling
 
@@ -238,14 +248,14 @@ There is also no in-transaction asset construction: `faucet::create_fungible_ass
 
 ```rust
 pub struct Asset {
-    pub key: Word,
+    pub id: AssetId,
     pub value: Word,
 }
 ```
 
-**Constructor**: `Asset::new(key, value)` builds an Asset from its two words (the arguments are `impl Into<Word>`).
+**Constructor**: `Asset::new(id, value)` takes `impl Into<AssetId>` and `impl Into<Word>`. Existing word arguments still convert into the typed ID.
 
-The guest field is literally named `key`, but the word it holds is the protocol's **asset ID** — the vault's unique identifier for the asset. Read `asset.key` as "the asset-ID word".
+The guest field is `id: AssetId`; access its underlying word as `asset.id.inner`. Vault queries accept the typed `AssetId`.
 
 For fungible assets the amount lives in `asset.value[0]`. Prefer the typed accessors over raw felt maths:
 
@@ -258,7 +268,7 @@ let fungible: bool = asset.is_fungible();
 let amount_felt = asset.value[0];
 
 // Keep the asset-ID word if you need to persist or compare the asset
-let asset_id = asset.key;
+let asset_id = asset.id.inner;
 
 // Vault operations (component methods only — see pitfall P11)
 self.add_asset(asset);
@@ -270,6 +280,12 @@ self.remove_asset(asset);     // Asset is Copy, no clone needed
 ## P2ID Output Note Creation
 
 To send assets to another account, create a P2ID output note **from an account-component method** — both `output_note::create` and `native_account::remove_asset` are account-context only, so a note or tx script cannot do this inline.
+
+The standard P2ID storage is `[target.suffix, target.prefix, salt_0, salt_1]`. Use zero salts
+for the ordinary public recipient, or agreed secret salts for a recipient that needs them.
+Obtain the script root from the matching host `P2idNote::script_root()`. A two-item recipient
+does not satisfy the standard script. The compiler's small Rust `p2id-note` example has its
+own script root and input schema; it is not interchangeable with the standard P2ID script.
 
 The sequence is `note::build_recipient` → `output_note::create` → `remove_asset` + `output_note::add_asset`. `examples/basic-wallet/src/lib.rs` is the reference: `create_note` wraps `output_note::create`, and `move_asset_to_note` wraps the remove-then-add pair.
 
@@ -290,7 +306,7 @@ A component's WIT is embedded in its compiled package, and the embedded copy is 
 
 ```toml
 [build-dependencies]
-miden-sdk-build-script-support = "0.14.0"
+miden-sdk-build-script-support = "0.15.0"
 ```
 
 ```rust
@@ -389,7 +405,7 @@ Note side (`examples/p2id-note/src/lib.rs`): the note declares `#[account(basic_
 - [ ] Every externally-callable trait method carries `#[account_procedure]`, on the **trait**, not the impl
 - [ ] `#[account_procedure]` and `#[auth_script]` are not combined in one component
 - [ ] The `#[account(...)]` wrapper struct name differs from every generated trait name
-- [ ] `edition = "2024"` and `crate-type = ["cdylib"]` in `Cargo.toml`, with the full final-release requirement `miden = "0.14.0"`
+- [ ] `edition = "2024"` and `crate-type = ["cdylib"]` in `Cargo.toml`, with the full final-release requirement `miden = "0.15.0"`
 - [ ] `[lib]` in `miden-project.toml` has `kind` (`account-component` / `note` / `tx-script`), `namespace`, **and `path`**
 - [ ] `[dependencies]` in `miden-project.toml` carries `miden-core = "*"` and `miden-protocol = "*"`
 - [ ] Typed storage uses `StorageValue<T>` / `StorageMap<K, V>` with `get()` / `set()`; slot names derive from `<package>::<namespace-interface>::<field>`

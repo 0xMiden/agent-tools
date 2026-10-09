@@ -102,3 +102,5 @@ adv.push_mapval
 ```
 
 For the Rust analog (returning `Err` on bad/missing external input rather than panicking or defaulting), see `return-error-not-panic`.
+
+In VM 0.35, `AdviceInputs` fields are private: use `with_stack` (formerly `with_advice_stack`), `with_map`, and `with_merkle_store`. Advice stack, map, and Merkle store share one default 16 MiB byte budget; review total advice size when migrating.

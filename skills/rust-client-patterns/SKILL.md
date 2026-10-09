@@ -18,21 +18,21 @@ still published as `miden-client`. The MSRV tracks `rust-toolchain.toml`
 there — copy that channel into the consumer's toolchain file rather than
 hard-coding a number that drifts.
 
-Pin the exact pre-release strings; Cargo does not match a pre-release against a
-plain `"0.16"` requirement:
+Use the stable v0.17 release family below. These are Cargo caret requirements;
+retain a lockfile for reproducible applications (or use `=` for exact pins):
 
 ```toml
-miden-client              = "0.16.0-rc.5"
-miden-client-sqlite-store = "0.16.0-rc.5"
-miden-protocol            = "0.16.0-rc.9"
-miden-standards           = "0.16.0-rc.9"
-miden-tx                  = "0.16.0-rc.9"
-miden-tx-batch            = "0.16.0-rc.9"
-miden-assembly            = "0.29.1"
-miden-core                = "0.29.1"
-miden-processor           = "0.29.1"
-miden-prover              = "0.29.1"
-miden-crypto              = "0.29.1"
+miden-client              = "0.17.2"
+miden-client-sqlite-store = "0.17.2"
+miden-protocol            = "0.17.1"
+miden-standards           = "0.17.1"
+miden-tx                  = "0.17.1"
+miden-tx-batch            = "0.17.1"
+miden-assembly            = "0.35.0"
+miden-core                = "0.35.0"
+miden-processor           = "0.35.0"
+miden-prover              = "0.35.0"
+miden-crypto              = "0.35.0"
 ```
 
 ## Section Headers
@@ -185,6 +185,16 @@ All trait methods use `&self`, not `&mut self`. Implementations must use interio
 
 All update operations must be atomic — if an error occurs partway through, roll back all changes.
 
+For v0.17 custom stores, implement all five account-witness methods:
+`track_account_witness`, `untrack_account_witness`, `tracked_account_witnesses`,
+`get_account_witness`, and `update_account_witness`. Persist the witnesses in
+`update.account_updates().account_witnesses()` during `apply_state_sync`.
+`StateSyncUpdate::from_parts` also takes a trailing `Option<ProtocolConfig>`;
+`into_parts` returns it as a sixth element. Save a delivered configuration under
+`protocol_config_setting_key(config.to_commitment())` in client settings. Execution
+and note screening depend on it. The transport cursor's encoding also changed;
+do not retain the old eight-byte cursor format.
+
 ## Client\<AUTH\> Pattern
 
 ### Struct Definition
@@ -291,6 +301,10 @@ and associates it with the given account — there is no separate "insert key" +
 `crates/rust-client/src/keystore`; the WASM keystore lives in the
 `web-sdk` repo.
 
+`get_account_key_commitments` returns an empty set for an unknown account. A
+successful account export may therefore contain no signing keys; inspect the
+key count instead of treating export success as proof that the account can sign.
+
 The `Keystore` bound reaches the client via the builder: the `ClientBuilder`
 is constrained by `BuilderAuthenticator`, a marker super-trait defined as
 `Keystore + 'static` (and additionally `From<FilesystemKeyStore>` under the
@@ -315,16 +329,17 @@ The `store` field holds a `StoreBuilder` (either an already-built
 `StoreBuilder::Factory`); the `.store(...)` method takes an `Arc<dyn Store>`
 and wraps it into `StoreBuilder::Store`.
 
-Provide network-specific constructors: `for_testnet()`, `for_devnet()`,
+Provide network-specific constructors: `for_mainnet()`, `for_testnet()`, `for_devnet()`,
 `for_localhost()`. Each returns `Self` synchronously and pre-fills the RPC
-endpoint for that network. `for_testnet()` and `for_devnet()` additionally
+endpoint for that network. The three public-network constructors additionally
 pre-fill a remote prover and the note-transport endpoint; `for_localhost()`
 sets *only* the RPC endpoint (leaving the prover to fall back to the default
-local prover at `build()` time, and configuring no note transport). The RNG is
-*not* network-specific and is *not* set by any of these constructors — it is
-left unset (`Default` leaves `rng: None`) and resolved at `build()` time, where
-a user-supplied RNG is used if present, otherwise a seed-based `ClientRng` is
-created from `rand::rng()`. The default prover, when unset, resolves to a
+local prover at `build()` time, and configuring no note transport). Production
+builds use a `ChaCha20Rng` seeded from `rand::rng()`. Injecting a deterministic
+RNG with `.rng(Box<dyn ClientCryptoRng>)` is available only under `testing`;
+`ClientCryptoRng` replaces `ClientFeltRng` and requires `CryptoRng + Send + Sync`.
+Use `miden_client::rng::{draw_felt, draw_word}` with rand 0.10 RNGs rather than
+the removed `RandomCoin` re-export. The default prover, when unset, resolves to a
 `LocalTransactionProver` at `build()`. Only `build()` is async (it constructs
 the client from the configured components):
 
@@ -342,14 +357,14 @@ configured. Builder defaults worth knowing: `TX_DISCARD_DELTA = 20`,
 
 Other builder methods: `grpc_client(&Endpoint, Option<u64>)`, `source_manager`,
 `irrelevant_block_prune_interval(Option<u32>)`,
-`cache_partial_mmr_in_memory(bool)`, `tx_graceful_blocks(Option<u32>)`,
+`cache_partial_mmr_in_memory(bool)`, `tx_discard_delta(Option<u32>)`,
 `note_transport(Arc<dyn NoteTransportClient>)`, `endpoint() -> Option<&Endpoint>`,
 and — on `ClientBuilder<FilesystemKeyStore>` — `filesystem_keystore(path)`.
 
 #### `.rpc()` does not verify responses
 
 `ClientBuilder::rpc()` takes the client **as provided**. Only `grpc_client(..)`
-and the `for_testnet` / `for_devnet` / `for_localhost` constructors wrap the
+and the `for_mainnet` / `for_testnet` / `for_devnet` / `for_localhost` constructors wrap the
 transport in `VerifyingRpcClient`. Handing `.rpc()` a bare `GrpcClient`
 compiles, runs, and silently drops response verification:
 
@@ -376,17 +391,42 @@ the compiler will not catch on the summary path.
 
 ### Fees
 
+Sync before executing so the client has the chain's `ProtocolConfig`. The native
+fee asset comes from that configuration and is paid at rate 1/1. Supported
+single-signature components can use the client's default fee preparation.
+
+Multisig, smart-multisig, and guarded-multisig need a `MultisigAuthArgs` preimage,
+including on a zero-fee chain:
+
 ```rust
+use miden_client::account::component::{FeeConversionInfo, MultisigAuthArgs};
+use miden_protocol::crypto::SequentialCommit;
+
+client.sync_state().await?;
+let bound_block = client.get_sync_height().await?;
+let header = client.get_latest_block_header().await?;
+let fee_faucet_id = client
+    .get_protocol_config(header.protocol_config_commitment())
+    .await?
+    .fee_asset_id()
+    .faucet_id();
+let auth_args = MultisigAuthArgs::new(bound_block, salt) // fresh random salt per proposal
+    .with_conversion_info(FeeConversionInfo::one_to_one(fee_faucet_id));
+let auth_arg = auth_args.to_commitment();
 let request = TransactionRequestBuilder::new()
-    .fee_conversion_salt(salt)
+    .block_numbers([bound_block])
+    .auth_arg(auth_arg)
+    .extend_advice_map([(auth_arg, auth_args.to_elements())])
     .build()?;
 ```
 
-`fee_conversion_salt` declares the salt; during transaction preparation the client creates the
-native-asset 1:1 fee-conversion information. It and `auth_arg()` are mutually exclusive: setting
-one clears the other. Leave the salt unset for the supported single-signature default. The
-multisig, smart-multisig, and guarded-multisig auth variants require a caller-chosen salt; auth
-components that do not support fee conversion reject an explicitly declared salt.
+`SequentialCommit` needs a direct `miden-protocol` dependency. Keep the same auth
+args and request for all approvers, authenticate the bound block, and execute at
+each client's current tip. Use `with_approval_expiration_delta` to limit the
+approval window; transaction expiration alone does not do that. Do not replace
+these args with `fee_conversion_salt`: that method still builds a two-word
+preimage, while v0.17 multisig expects three words. It may compile and fail only
+during execution. Setting `fee_conversion_salt` also clears an explicit auth arg.
 
 ### `AssetId` is the vault key, not the asset class
 
@@ -395,6 +435,38 @@ an asset; the per-faucet class within an asset id is a separate type,
 `AssetClass`. The names are a trap: code that treats `AssetId` as the asset
 class compiles and is wrong. `miden_client::asset` also exposes `AssetAmount`,
 `AssetCallbacks`, `AssetComposition`, `AssetWitness`, and `PartialVault`.
+
+The host `Asset` is a struct with `id()` / `value()` accessors. Convert a
+`FungibleAsset` with `.into()`; do not match `Asset::Fungible` or
+`Asset::NonFungible`. `AccountVaultDelta` works with whole assets, and old raw ID
+words must be rebuilt because their encoding now includes version bits.
+
+### Files, packages, and transport
+
+- `AccountFile` and `NoteFile` use Protobuf and live in `miden-objects`, with
+  client re-exports in `account` / `note`. Use `try_from_bytes` and the inherent
+  `to_bytes`; account fields are private (`account()`, `auth_secret_keys()`,
+  `into_parts()`). v0.16 `.mac` / `.mno` files and SQLite stores do not migrate
+  automatically. Preserve keys and private notes before rebuilding a real store.
+- Rebuild `.masp` files with compiler 0.11 (package format 7.0.0). CLI `exec`
+  requires `--package`; `--script-path` is removed. The package must be a library
+  exporting exactly one `@transaction_script` procedure, not a program package.
+- Relay private notes with `send_private_note_with_proof(note, &address,
+  inclusion_proof)` after their creating transaction is committed and synced.
+  Client, node, prover, and note transport must support v0.17. `sync_state`
+  logs transport failures and continues chain sync, so success alone does not
+  prove private-note delivery.
+- Custom `NodeRpcClient` implementations must follow the released trait,
+  including `register_account` / `is_account_allowed` and witness responses.
+  Networks with an allowlist require registration before creating an account.
+- On `BatchSubmissionOutcomeUnknown`, retain the proven batch and use
+  `retry_proven_batch`; rebuilding and blindly resubmitting a transaction is not
+  a status check.
+- `expiration_delta` now applies to consume-only and bare requests too. Network
+  notes and policy-gated assets can cap the transaction lifetime at 20 blocks.
+
+See the [v0.17 client migration guide](https://github.com/0xMiden/docs/blob/9911d004142687ad7d06f72aa03284df54ae9922/docs/builder/migration/07-client-changes.md)
+for custom RPC signatures and store recovery procedures.
 
 ## Lazy Reader Patterns
 
@@ -449,7 +521,10 @@ input.note_tags.insert(extra_tag); // note_tags is a BTreeSet<NoteTag>
 // internally, fetch the current PartialMmr, and drive the sync. This part
 // mirrors Client::sync_chain's body in crates/rust-client/src/sync/mod.rs:
 //
-//   let state_sync = StateSync::new(rpc_api, Arc::new(note_screener), tx_discard_delta);
+//   let validator_config = client.get_validator_config().await?;
+//   let state_sync = StateSync::new(
+//       rpc_api, Arc::new(note_screener), tx_discard_delta, validator_config,
+//   );
 //   let mut partial_mmr = client.get_current_partial_mmr().await?;
 //   let update: StateSyncUpdate = state_sync.sync_state(&mut partial_mmr, input).await?;
 //
@@ -460,7 +535,7 @@ input.note_tags.insert(extra_tag); // note_tags is a BTreeSet<NoteTag>
 client.apply_state_sync(update).await?;
 ```
 
-`StateSync::new(rpc_api, note_screener, tx_discard_delta)`,
+`StateSync::new(rpc_api, note_screener, tx_discard_delta, validator_config)`,
 `Client::get_current_partial_mmr()`, and
 `StateSync::sync_state(&mut partial_mmr, input)` are the load-bearing pieces —
 copy that construction from `Client::sync_chain` rather than reinventing it.

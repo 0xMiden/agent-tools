@@ -31,7 +31,7 @@ use miden::core::word
 # TYPE ALIASES
 # =================================================================================================
 
-type BeWord = struct @bigendian { a: felt, b: felt, c: felt, d: felt }
+type BeWord = struct { a: felt, b: felt, c: felt, d: felt }
 type DoubleWord = struct { word_lo: BeWord, word_hi: BeWord }
 type MemoryAddress = u32
 
