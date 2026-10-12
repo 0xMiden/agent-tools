@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "id": "published-consumer-integration",
+  "mode": "integration",
+  "description": "Read-only consumer context verification using the separately owned PR19 checker. No hook, browser, contract, or model execution is implied.",
+  "source_files": [
+    "{agent_tools}/scripts/agent_tools.py",
+    "{agent_tools}/release.json",
+    "{consumer}/package.json",
+    "{consumer}/package-lock.json",
+    "{consumer}/node_modules/@miden-sdk/miden-sdk/AGENTS.md"
+  ],
+  "cases": [
+    {
+      "id": "packaged-sdk-consumer",
+      "scenario": "packaged-sdk-frontend",
+      "expected_outcome": "verified",
+      "steps": [
+        {
+          "id": "consumer-context",
+          "phase": "verify",
+          "argv": [
+            "{python}",
+            "{agent_tools}/scripts/agent_tools.py",
+            "check-consumer",
+            "--project",
+            "{consumer}",
+            "--profile",
+            "web",
+            "--agent",
+            "codex",
+            "--docs-version",
+            "0.17",
+            "--docs-channel",
+            "stable"
+          ],
+          "source": "0xMiden/agent-tools PR19, bc8d207980aaedd42a66d7ac2cf07d911415ef25: scripts/agent_tools.py check-consumer",
+          "assertions": [
+            {
+              "pointer": "/valid",
+              "equals": true
+            },
+            {
+              "pointer": "/profile",
+              "equals": "web"
+            },
+            {
+              "pointer": "/packages/@miden-sdk~1miden-sdk/version",
+              "equals": "0.17.1"
+            },
+            {
+              "pointer": "/hook_execution_verified",
+              "equals": false
+            },
+            {
+              "pointer": "/docs_live_verified",
+              "equals": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "wrong-docs-channel",
+      "scenario": "version-artifact-mismatch",
+      "expected_outcome": "failed",
+      "steps": [
+        {
+          "id": "reject-mismatched-channel",
+          "phase": "verify",
+          "argv": [
+            "{python}",
+            "{agent_tools}/scripts/agent_tools.py",
+            "check-consumer",
+            "--project",
+            "{consumer}",
+            "--profile",
+            "web",
+            "--agent",
+            "codex",
+            "--docs-version",
+            "0.17",
+            "--docs-channel",
+            "current"
+          ],
+          "source": "PR19 check-consumer: intentionally incorrect docs-channel input; expected rejection",
+          "assertions": [
+            {
+              "pointer": "/valid",
+              "equals": true
+            }
+          ]
+        }
+      ],
+      "expected_failure": {
+        "step": "reject-mismatched-channel",
+        "kind": "nonzero-exit",
+        "stderr_contains": "docs channel"
+      }
+    }
+  ]
+}
