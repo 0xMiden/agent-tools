@@ -174,7 +174,9 @@ run a shell or any authorized program. Manifests are executable configurations,
 not a security sandbox. Review them and use a disposable execution environment.
 
 Step `assertions` compare JSON pointers against exact JSON types/values;
-successful process exit alone cannot verify a task. Preflight execution failure
+successful process exit alone cannot verify a task. Malformed verifier JSON or
+missing pointers produce `invalid-verifier-output`, not `assertion-failed`.
+Preflight execution failure
 blocks dependent work; action/verifier failure fails it. Timeouts terminate the
 process group on POSIX. The harness does not retry automatically or clean up
 external services/resources a worker may start. Artifacts must be nonempty files

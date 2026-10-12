@@ -71,6 +71,29 @@ class EvaluationTests(unittest.TestCase):
         self.assertIn('hook_execution_verified', (self.output / attempt['steps'][0]['stdout']).read_text())
         self.assertFalse(attempt['first_attempt_success'])
 
+    def test_nested_json_assertions_preserve_types(self):
+        for actual, expected, matches in [
+            ({'count': True}, {'count': 1}, False),
+            ([False], [0], False),
+            ({'checks': [{'count': 1}], 'ok': True}, {'ok': True, 'checks': [{'count': 1}]}, True),
+        ]:
+            with self.subTest(actual=actual, expected=expected):
+                code = 'print(' + repr(json.dumps({'value': actual})) + ')'
+                self.write_suite([self.step(code=code, assertions=[dict(pointer='/value', equals=expected)])])
+                attempt = self.run_suite(expected_exit=0 if matches else 1)['attempts'][0]
+                self.assertEqual(attempt['outcome'], 'verified' if matches else 'failed')
+
+    def test_invalid_verifier_output_does_not_match_expected_assertion_failure(self):
+        for output in ['not JSON', '{"unrelated": false}']:
+            with self.subTest(output=output):
+                self.write_suite([self.step(code='print(' + repr(output) + ')',
+                                            assertions=[dict(pointer='/version_equal', equals=True)])],
+                                 expected_outcome='failed',
+                                 expected_failure=dict(step='assert-state', kind='assertion-failed'))
+                attempt = self.run_suite(expected_exit=1)['attempts'][0]
+                self.assertFalse(attempt['expected_outcome_matched'])
+                self.assertEqual(attempt['steps'][0]['failure'], 'invalid-verifier-output')
+
     def test_missing_executable_is_blocked_and_not_invented(self):
         step = self.step(phase='preflight')
         step['argv'] = ['agent-eval-intentionally-absent-executable']
@@ -163,14 +186,21 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(attempt['invented_commands'], 1)
         self.assertEqual(attempt['command_audit_status'], 'complete')
 
-    def test_malformed_activity_cannot_be_reported_as_zero(self):
-        code = "import os; from pathlib import Path; Path(os.environ['EVAL_ACTIVITY_PATH']).write_text('not json')"
-        self.write_suite([self.step('agent', code, 'action'),
-                          self.step(assertions=[dict(pointer='/count', equals=1)])])
-        attempt = self.run_suite(expected_exit=1)['attempts'][0]
-        self.assertEqual(attempt['outcome'], 'failed')
-        self.assertEqual(attempt['command_audit_status'], 'invalid')
-        self.assertIsNone(attempt['invented_commands'])
+    def test_invalid_activity_retains_failed_attempt_and_completed_cases(self):
+        for operation in ["write_text('not json')", 'mkdir()']:
+            with self.subTest(operation=operation):
+                completed = self.write_suite()['cases'][0]
+                completed['id'] = 'completed'
+                code = "import os; from pathlib import Path; Path(os.environ['EVAL_ACTIVITY_PATH'])." + operation
+                data = self.write_suite([self.step('agent', code, 'action'),
+                                         self.step(assertions=[dict(pointer='/count', equals=1)])])
+                data['cases'].insert(0, completed)
+                self.suite.write_text(json.dumps(data))
+                first, attempt = self.run_suite(expected_exit=1)['attempts']
+                self.assertEqual(first['outcome'], 'verified')
+                self.assertEqual(attempt['outcome'], 'failed')
+                self.assertEqual(attempt['command_audit_status'], 'invalid')
+                self.assertIsNone(attempt['invented_commands'])
 
     def test_manifest_rejects_shell_strings_and_unknown_variables(self):
         data = self.write_suite()

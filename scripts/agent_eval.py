@@ -135,7 +135,7 @@ def validate_suite(suite, variables):
             failure = case['expected_failure']
             if not isinstance(failure, dict) or failure.get('step') not in steps or failure.get('kind') not in {
                 'missing-tool', 'missing-working-directory', 'timeout', 'execution-error',
-                'nonzero-exit', 'assertion-failed'}:
+                'nonzero-exit', 'assertion-failed', 'invalid-verifier-output'}:
                 raise ValueError('expected_failure needs an existing step and known failure kind')
             if 'stderr_contains' in failure and (not isinstance(failure['stderr_contains'], str) or not failure['stderr_contains']):
                 raise ValueError('stderr_contains must be nonempty text')
@@ -146,6 +146,18 @@ def pointer_value(value, pointer):
         key = key.replace('~1', '/').replace('~0', '~')
         value = value[int(key)] if isinstance(value, list) else value[key]
     return value
+
+
+def json_equal(actual, expected):
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(actual, dict):
+        return actual.keys() == expected.keys() and all(
+            json_equal(actual[key], value) for key, value in expected.items())
+    if isinstance(actual, list):
+        return len(actual) == len(expected) and all(
+            json_equal(a, e) for a, e in zip(actual, expected))
+    return actual == expected
 
 
 def execute(step, workdir, output, variables):
@@ -193,11 +205,14 @@ def execute(step, workdir, output, variables):
             for assertion in step['assertions']:
                 actual = pointer_value(value, assertion['pointer'])
                 expected = assertion['equals']
-                if type(actual) is not type(expected) or actual != expected:
-                    raise ValueError(f"Assertion failed: {assertion['pointer']}")
-            result['assertions_passed'] = True
+                if not json_equal(actual, expected):
+                    result['failure'] = 'assertion-failed'
+                    result['assertion_error'] = f"Assertion failed: {assertion['pointer']}"
+                    break
+            else:
+                result['assertions_passed'] = True
         except (ValueError, KeyError, IndexError, TypeError) as error:
-            result['failure'] = 'assertion-failed'
+            result['failure'] = 'invalid-verifier-output'
             result['assertion_error'] = str(error)
     return result
 
@@ -209,9 +224,9 @@ def activity_metrics(path):
                    activity_sha256=None)
     if not path.exists():
         return metrics
-    data = path.read_bytes()
-    metrics['activity_sha256'] = sha(data)
     try:
+        data = path.read_bytes()
+        metrics['activity_sha256'] = sha(data)
         events = [json.loads(line) for line in data.decode().splitlines() if line.strip()]
         for event in events:
             kind = event['type']
@@ -241,7 +256,7 @@ def activity_metrics(path):
             metrics['command_audit_status'] = 'complete'
             metrics['human_interventions'] = metrics['human_interventions_observed']
             metrics['invented_commands'] = metrics['invented_commands_observed']
-    except (ValueError, KeyError, TypeError, UnicodeError) as error:
+    except (ValueError, OSError, KeyError, TypeError, UnicodeError) as error:
         metrics['command_audit_status'] = 'invalid'
         metrics['activity_error'] = str(error)
     return metrics
