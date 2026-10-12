@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "id": "dx-harness-fixtures",
+  "mode": "fixture",
+  "description": "Exercises harness mechanics using toy data. Does not evaluate a Miden contract, SDK, model, browser, or node.",
+  "cases": [
+    {
+      "id": "fresh-contract",
+      "scenario": "fresh-contract",
+      "expected_outcome": "verified",
+      "steps": [
+        {
+          "id": "action",
+          "phase": "action",
+          "argv": [
+            "{python}",
+            "{repo}/evaluation/fixture_driver.py",
+            "fresh-contract",
+            "action"
+          ],
+          "source": "evaluation/fixture_driver.py: deterministic toy fixture only"
+        },
+        {
+          "id": "verify",
+          "phase": "verify",
+          "argv": [
+            "{python}",
+            "{repo}/evaluation/fixture_driver.py",
+            "fresh-contract",
+            "verify"
+          ],
+          "source": "evaluation/fixture_driver.py: deterministic toy fixture only",
+          "assertions": [
+            {
+              "pointer": "/count",
+              "equals": 1
+            },
+            {
+              "pointer": "/fixture_only",
+              "equals": true
+            }
+          ]
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "counter.json"
+        }
+      ]
+    },
+    {
+      "id": "packaged-sdk-frontend",
+      "scenario": "packaged-sdk-frontend",
+      "expected_outcome": "verified",
+      "steps": [
+        {
+          "id": "action",
+          "phase": "action",
+          "argv": [
+            "{python}",
+            "{repo}/evaluation/fixture_driver.py",
+            "packaged-sdk-frontend",
+            "action"
+          ],
+          "source": "evaluation/fixture_driver.py: deterministic toy fixture only"
+        },
+        {
+          "id": "verify",
+          "phase": "verify",
+          "argv": [
+            "{python}",
+            "{repo}/evaluation/fixture_driver.py",
+            "packaged-sdk-frontend",
+            "verify"
+          ],
+          "source": "evaluation/fixture_driver.py: deterministic toy fixture only",
+          "assertions": [
+            {
+              "pointer": "/context_equal",
+              "equals": true
+            }
+          ]
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "consumed-context.md"
+        }
+      ]
+    },
+    {
+      "id": "full-stack-change",
+      "scenario": "full-stack-change",
+      "expected_outcome": "verified",
+      "steps": [
+        {
+          "id": "action",
+          "phase": "action",
+          "argv": [
+            "{python}",
+            "{repo}/evaluation/fixture_driver.py",
+            "full-stack-change",
+            "action"
+          ],
+          "source": "evaluation/fixture_driver.py: deterministic toy fixture only"
+        },
+        {
+          "id": "verify",
+          "phase": "verify",
+          "argv": [
+            "{python}",
+            "{repo}/evaluation/fixture_driver.py",
+            "full-stack-change",
+            "verify"
+          ],
+          "source": "evaluation/fixture_driver.py: deterministic toy fixture only",
+          "assertions": [
+            {
+              "pointer": "/artifacts_equal",
+              "equals": true
+            },
+            {
+              "pointer": "/count",
+              "equals": 2
+            }
+          ]
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "contract-package.json"
+        },
+        {
+          "path": "frontend-package.json"
+        }
+      ]
+    },
+    {
+      "id": "missing-tool",
+      "scenario": "missing-tool",
+      "expected_outcome": "blocked",
+      "steps": [
+        {
+          "id": "preflight",
+          "phase": "preflight",
+          "argv": [
+            "agent-eval-intentionally-absent-fixture-tool"
+          ],
+          "source": "evaluation/fixtures.json: deliberate absence, not a supported Miden command"
+        }
+      ],
+      "expected_failure": {
+        "step": "preflight",
+        "kind": "missing-tool"
+      }
+    },
+    {
+      "id": "version-artifact-mismatch",
+      "scenario": "version-artifact-mismatch",
+      "expected_outcome": "failed",
+      "steps": [
+        {
+          "id": "action",
+          "phase": "action",
+          "argv": [
+            "{python}",
+            "{repo}/evaluation/fixture_driver.py",
+            "version-artifact-mismatch",
+            "action"
+          ],
+          "source": "evaluation/fixture_driver.py: deterministic toy fixture only"
+        },
+        {
+          "id": "verify",
+          "phase": "verify",
+          "argv": [
+            "{python}",
+            "{repo}/evaluation/fixture_driver.py",
+            "version-artifact-mismatch",
+            "verify"
+          ],
+          "source": "evaluation/fixture_driver.py: deterministic toy fixture only",
+          "assertions": [
+            {
+              "pointer": "/version_equal",
+              "equals": true
+            }
+          ]
+        }
+      ],
+      "artifacts": [],
+      "expected_failure": {
+        "step": "verify",
+        "kind": "assertion-failed"
+      }
+    },
+    {
+      "id": "unavailable-service",
+      "scenario": "unavailable-service",
+      "expected_outcome": "blocked",
+      "steps": [
+        {
+          "id": "preflight",
+          "phase": "preflight",
+          "argv": [
+            "{python}",
+            "{repo}/evaluation/fixture_driver.py",
+            "unavailable-service",
+            "preflight"
+          ],
+          "source": "evaluation/fixture_driver.py: deterministic toy fixture only"
+        }
+      ],
+      "expected_failure": {
+        "step": "preflight",
+        "kind": "nonzero-exit",
+        "stderr_contains": "fixture service-unavailable: owned unlistening socket:"
+      }
+    }
+  ]
+}

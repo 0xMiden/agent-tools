@@ -1,0 +1,346 @@
+{
+  "schema_version": 1,
+  "id": "miden-agent-dx-six-scenarios",
+  "mode": "agent",
+  "agent": {
+    "adapter": "{adapter}",
+    "model": "{model}"
+  },
+  "description": "Requires operator-provided real agent adapter and independent verifier. No model run is bundled or implied.",
+  "cases": [
+    {
+      "id": "fresh-contract",
+      "scenario": "fresh-contract",
+      "task": "Read the repository's AGENTS.md, .agents/skills and pinned Rust guidance. In disposable task-owned source, create a fresh counter contract that increments by two with a rejecting invalid-input path. Preserve the baseline toolchain and locks. Compile the new contract and write/run MockChain tests proving both transitions. Save the real generated package as package.masp in EVAL_WORKDIR. Report build/test logs, exact versions, commands, failures and blocked local-node/browser stages. No testnet submission, valuable transactions, credentials changes or deployments.",
+      "expected_outcome": "verified",
+      "verified_outcome": "verified",
+      "steps": [
+        {
+          "id": "agent-task",
+          "phase": "action",
+          "argv": [
+            "{adapter}"
+          ],
+          "source": "Operator-supplied reviewed executable adapter; reads EVAL_PROMPT_PATH, EVAL_WORKDIR and EVAL_SCENARIO",
+          "timeout_seconds": 3600
+        },
+        {
+          "id": "independent-acceptance",
+          "phase": "verify",
+          "argv": [
+            "{verifier}"
+          ],
+          "source": "Operator-supplied independent verifier; asserts real evidence for this scenario",
+          "timeout_seconds": 3600,
+          "assertions": [
+            {
+              "pointer": "/checks/fresh_contract_written",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/contract_build",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/mockchain_transition",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/invalid_input_rejected",
+              "equals": true
+            }
+          ]
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "package.masp",
+          "min_bytes": 1
+        },
+        {
+          "path": "evaluation-evidence.json",
+          "min_bytes": 1
+        }
+      ]
+    },
+    {
+      "id": "packaged-sdk-frontend",
+      "scenario": "packaged-sdk-frontend",
+      "task": "Read installed @miden-sdk package AGENTS.md and the copied SDK skills. Use their exact APIs to implement a disposable frontend displaying the counter state and a pending/error state. Execute the real package initializer and prepare hook only when the provided environment authorizes it. Verify copied context bytes/pointers, typecheck and build, then exercise the relevant UI in a browser or component test. Do not claim a live wallet transaction from a build. Preserve locks and existing guidance. Record exact packaged-context identities and the prepare execution evidence.",
+      "expected_outcome": "verified",
+      "verified_outcome": "verified",
+      "steps": [
+        {
+          "id": "agent-task",
+          "phase": "action",
+          "argv": [
+            "{adapter}"
+          ],
+          "source": "Operator-supplied reviewed executable adapter; reads EVAL_PROMPT_PATH, EVAL_WORKDIR and EVAL_SCENARIO",
+          "timeout_seconds": 3600
+        },
+        {
+          "id": "independent-acceptance",
+          "phase": "verify",
+          "argv": [
+            "{verifier}"
+          ],
+          "source": "Operator-supplied independent verifier; asserts real evidence for this scenario",
+          "timeout_seconds": 3600,
+          "assertions": [
+            {
+              "pointer": "/checks/packaged_context_used",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/prepare_hook_executed",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/copied_context_equal",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/frontend_types",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/frontend_build",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/frontend_ui",
+              "equals": true
+            }
+          ]
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "evaluation-evidence.json",
+          "min_bytes": 1
+        }
+      ]
+    },
+    {
+      "id": "full-stack-change",
+      "scenario": "full-stack-change",
+      "task": "Read the pinned full-stack template instructions. Change the contract counter step and matching frontend behavior in disposable task-owned source. Build/test the changed contract, copy its actual package into the frontend and compare bytes. Run the separately owned isolated-node validator for the changed behavior and exercise the frontend against its result. Record state-before/state-after, exact package hash, localhost-only submission/inclusion evidence and UI evidence. If the reviewed validator or service is missing, name the blocked gate without inventing a command. No valuable transactions or public network submission.",
+      "expected_outcome": "verified",
+      "verified_outcome": "verified",
+      "steps": [
+        {
+          "id": "agent-task",
+          "phase": "action",
+          "argv": [
+            "{adapter}"
+          ],
+          "source": "Operator-supplied reviewed executable adapter; reads EVAL_PROMPT_PATH, EVAL_WORKDIR and EVAL_SCENARIO",
+          "timeout_seconds": 3600
+        },
+        {
+          "id": "independent-acceptance",
+          "phase": "verify",
+          "argv": [
+            "{verifier}"
+          ],
+          "source": "Operator-supplied independent verifier; asserts real evidence for this scenario",
+          "timeout_seconds": 3600,
+          "assertions": [
+            {
+              "pointer": "/checks/changed_contract_transition",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/frontend_consumes_changed_result",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/artifact_bytes_equal",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/isolated_node_validation",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/browser_flow",
+              "equals": true
+            }
+          ]
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "contract-package.masp",
+          "min_bytes": 1
+        },
+        {
+          "path": "frontend-package.masp",
+          "min_bytes": 1
+        },
+        {
+          "path": "evaluation-evidence.json",
+          "min_bytes": 1
+        }
+      ]
+    },
+    {
+      "id": "missing-tool",
+      "scenario": "missing-tool",
+      "task": "Attempt the requested contract build in a disposable environment whose declared required compiler tool is deliberately absent. Identify the exact missing executable and source-documented prerequisite. Do not invent a replacement command or install global tools. Stop that dependent stage with a precise blocker and explain the documented repair. Record the actual absence probe and preserved state.",
+      "expected_outcome": "blocked",
+      "verified_outcome": "blocked",
+      "steps": [
+        {
+          "id": "agent-task",
+          "phase": "action",
+          "argv": [
+            "{adapter}"
+          ],
+          "source": "Operator-supplied reviewed executable adapter; reads EVAL_PROMPT_PATH, EVAL_WORKDIR and EVAL_SCENARIO",
+          "timeout_seconds": 3600
+        },
+        {
+          "id": "independent-acceptance",
+          "phase": "verify",
+          "argv": [
+            "{verifier}"
+          ],
+          "source": "Operator-supplied independent verifier; asserts real evidence for this scenario",
+          "timeout_seconds": 3600,
+          "assertions": [
+            {
+              "pointer": "/checks/precise_missing_tool",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/documented_repair",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/dependent_action_stopped",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/state_preserved",
+              "equals": true
+            }
+          ]
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "evaluation-evidence.json",
+          "min_bytes": 1
+        }
+      ]
+    },
+    {
+      "id": "version-artifact-mismatch",
+      "scenario": "version-artifact-mismatch",
+      "task": "Read the supplied consumer's locked versions and packaged instructions. Diagnose the intentionally mismatched copied context, docs channel or compiled package format using the reviewed consumer/artifact validator. Identify expected/observed versions and hashes. Preserve source, lockfiles, keys and stores; report the exact rejected gate and safe repair. No automatic patch bump, fabricated compatibility statement or successful-runtime claim.",
+      "expected_outcome": "blocked",
+      "verified_outcome": "blocked",
+      "steps": [
+        {
+          "id": "agent-task",
+          "phase": "action",
+          "argv": [
+            "{adapter}"
+          ],
+          "source": "Operator-supplied reviewed executable adapter; reads EVAL_PROMPT_PATH, EVAL_WORKDIR and EVAL_SCENARIO",
+          "timeout_seconds": 3600
+        },
+        {
+          "id": "independent-acceptance",
+          "phase": "verify",
+          "argv": [
+            "{verifier}"
+          ],
+          "source": "Operator-supplied independent verifier; asserts real evidence for this scenario",
+          "timeout_seconds": 3600,
+          "assertions": [
+            {
+              "pointer": "/checks/expected_observed_identity",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/mismatch_rejected",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/documented_repair",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/state_preserved",
+              "equals": true
+            }
+          ]
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "evaluation-evidence.json",
+          "min_bytes": 1
+        }
+      ]
+    },
+    {
+      "id": "unavailable-service",
+      "scenario": "unavailable-service",
+      "task": "Run the declared localhost-only validation stage in the supplied disposable environment while its required node/prover/transport endpoint is unavailable. Use the reviewed health-check interface, bounded timeouts and actual error evidence to identify the unavailable component. Do not claim RPC submission, inclusion or note consumption. Preserve state and report the service prerequisite and explicit blocked gate.",
+      "expected_outcome": "blocked",
+      "verified_outcome": "blocked",
+      "steps": [
+        {
+          "id": "agent-task",
+          "phase": "action",
+          "argv": [
+            "{adapter}"
+          ],
+          "source": "Operator-supplied reviewed executable adapter; reads EVAL_PROMPT_PATH, EVAL_WORKDIR and EVAL_SCENARIO",
+          "timeout_seconds": 3600
+        },
+        {
+          "id": "independent-acceptance",
+          "phase": "verify",
+          "argv": [
+            "{verifier}"
+          ],
+          "source": "Operator-supplied independent verifier; asserts real evidence for this scenario",
+          "timeout_seconds": 3600,
+          "assertions": [
+            {
+              "pointer": "/checks/unavailable_component_named",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/bounded_probe",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/dependent_action_stopped",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/no_success_receipt_claimed",
+              "equals": true
+            },
+            {
+              "pointer": "/checks/state_preserved",
+              "equals": true
+            }
+          ]
+        }
+      ],
+      "artifacts": [
+        {
+          "path": "evaluation-evidence.json",
+          "min_bytes": 1
+        }
+      ]
+    }
+  ]
+}
