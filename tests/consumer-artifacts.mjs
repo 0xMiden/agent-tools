@@ -30,7 +30,7 @@ test('published v17 initializer and consumer prepare regenerate exact context', 
   }
   succeed(run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], project));
   const check = (channel = 'stable') => run(python, [join(root, 'scripts/agent_tools.py'),
-    'check-consumer', '--project', project, '--profile', 'web',
+    'check-consumer', '--project', project, '--profile', 'web', '--agent', 'claude',
     '--docs-version', '0.17', '--docs-channel', channel], project);
   const beforeInit = check();
   assert.equal(beforeInit.status, 1);
@@ -40,12 +40,18 @@ test('published v17 initializer and consumer prepare regenerate exact context', 
   manifest.scripts = {prepare: `node -e "require('fs').appendFileSync('.prepare-executions', 'ran\\n')"`};
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
   writeFileSync(join(project, 'AGENTS.md'), 'Existing consumer rules.\n');
+  writeFileSync(join(project, 'CLAUDE.md'), 'Existing Claude rules.\n');
   succeed(run('node', ['node_modules/@miden-sdk/create/dist/cli.js'], project));
   assert.match(readFileSync(join(project, 'AGENTS.md'), 'utf8'), /^Existing consumer rules\./);
-  assert.match(readFileSync(join(project, 'CLAUDE.md'), 'utf8'), /@AGENTS.md/);
+  assert.match(readFileSync(join(project, 'CLAUDE.md'), 'utf8'), /^Existing Claude rules\./);
   const initialized = JSON.parse(succeed(check()));
   assert.equal(initialized.hook_execution_verified, false);
   assert.equal(initialized.packages['@miden-sdk/miden-sdk'].version, '0.17.1');
+  const claudePath = join(project, 'CLAUDE.md');
+  const claudeBytes = readFileSync(claudePath, 'utf8');
+  writeFileSync(claudePath, claudeBytes.replace('node_modules/@miden-sdk/react/AGENTS.md', 'missing-guide'));
+  assert.match(check().stderr, /CLAUDE.md/);
+  writeFileSync(claudePath, claudeBytes);
   // Coexist with the agent-tools Claude installation, then execute the consumer hook.
   succeed(run(python, [join(root, 'scripts/agent_tools.py'), 'install', '--project', project,
     '--agent', 'claude', '--skill', 'miden-concepts', '--apply'], project));

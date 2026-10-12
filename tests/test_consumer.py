@@ -97,12 +97,40 @@ class ConsumerAcceptance(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Lock version mismatch'):
             self.check()
 
+    def test_npm_shrinkwrap_takes_precedence(self):
+        lock = self.project / 'package-lock.json'
+        shrinkwrap = self.project / 'npm-shrinkwrap.json'
+        current = json.loads(lock.read_text())
+        stale = json.loads(lock.read_text())
+        stale['packages']['node_modules/@miden-sdk/miden-sdk']['version'] = '0.16.4'
+        shrinkwrap.write_text(json.dumps(stale))
+        with self.assertRaisesRegex(ValueError, 'Lock version mismatch'):
+            self.check()
+        shrinkwrap.write_text(json.dumps(current))
+        lock.write_text(json.dumps(stale))
+        self.assertTrue(self.check()['valid'])
+        lock.unlink()
+        self.assertTrue(self.check()['valid'])
+
     def test_rust_tuple_from_actual_locked_packages(self):
         (self.project / 'Cargo.lock').write_text('version = 4\n\n[[package]]\nname = "miden-client"\nversion = "0.17.2"\n\n[[package]]\nname = "miden-protocol"\nversion = "0.17.1"\n\n[[package]]\nname = "miden-core"\nversion = "0.35.0"\n')
-        (self.project / 'miden-toolchain.toml').write_text('[toolchain]\nchannel = "0.17.0"\n')
-        result = self.check(profile='rust')
-        self.assertTrue(result['valid'])
-        self.assertFalse(result['compiler_execution_verified'])
+        for toolchain, valid in [
+            ('[toolchain]\nchannel = "0.17.0"\n', True),
+            ("[toolchain]\n  channel = '0.17.0' # release pin\n", True),
+            ('[metadata]\nchannel = "0.16.0"\n[toolchain]\nchannel = "0.17.0"\n', True),
+            ('[metadata]\nchannel = "0.17.0"\n[toolchain]\nchannel = "0.16.0"\n', False),
+            ('channel = "0.17.0"\n', False),
+        ]:
+            with self.subTest(toolchain=toolchain):
+                (self.project / 'miden-toolchain.toml').write_text(toolchain)
+                if valid:
+                    result = self.check(profile='rust')
+                    self.assertTrue(result['valid'])
+                    self.assertEqual(result['toolchain'], '0.17.0')
+                    self.assertFalse(result['compiler_execution_verified'])
+                else:
+                    with self.assertRaisesRegex(ValueError, 'toolchain channel mismatch'):
+                        self.check(profile='rust')
 
     def test_rust_tuple_mismatch_fails(self):
         (self.project / 'Cargo.lock').write_text('version = 4\n\n[[package]]\nname = "miden-client"\nversion = "0.16.4"\n')
@@ -116,14 +144,22 @@ class ConsumerAcceptance(unittest.TestCase):
 
     def test_yarn_v1_actual_resolved_version_is_supported(self):
         (self.project / 'package-lock.json').unlink()
-        (self.project / 'yarn.lock').write_text('# yarn lockfile v1\n\n"@miden-sdk/miden-sdk@0.17.1":\n  version "0.17.1"\n  resolved "https://registry.yarnpkg.com/example.tgz"\n')
-        self.assertTrue(self.check()['valid'])
+        for selector in ['"@miden-sdk/miden-sdk@0.17.1"',
+                         '"@miden-sdk/miden-sdk@^0.17.0", "@miden-sdk/miden-sdk@0.17.1"']:
+            with self.subTest(selector=selector):
+                (self.project / 'yarn.lock').write_text(
+                    f'# yarn lockfile v1\n\n{selector}:\n  version "0.17.1"\n'
+                    '\n"@miden-sdk/miden-sdk@^0.16.0":\n  version "0.16.4"\n')
+                self.assertTrue(self.check()['valid'])
 
     def test_yarn_v1_mismatch_fails(self):
         (self.project / 'package-lock.json').unlink()
-        (self.project / 'yarn.lock').write_text('# yarn lockfile v1\n\n"@miden-sdk/miden-sdk@0.17.1":\n  version "0.16.4"\n')
-        with self.assertRaisesRegex(ValueError, 'Lock version mismatch'):
-            self.check()
+        for selector, version in [('0.17.1', '0.16.4'), ('^0.17.1', '0.17.1')]:
+            with self.subTest(selector=selector, version=version):
+                (self.project / 'yarn.lock').write_text(
+                    f'# yarn lockfile v1\n\n"@miden-sdk/miden-sdk@{selector}":\n  version "{version}"\n')
+                with self.assertRaisesRegex(ValueError, 'Lock version mismatch'):
+                    self.check()
 
     def test_codex_consumer_does_not_require_claude_import(self):
         (self.project / 'CLAUDE.md').unlink()

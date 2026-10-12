@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import sys
 import tempfile
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 START = '<!-- miden-agent-tools:start -->'
@@ -215,13 +216,15 @@ def read_required(path, label):
 
 
 def locked_web_versions(project, names):
-    lock = project / 'package-lock.json'
+    lock = project / 'npm-shrinkwrap.json'
+    if not lock.exists():
+        lock = project / 'package-lock.json'
     if lock.is_file():
         data = json.loads(lock.read_text())
         packages = data.get('packages', {})
         return {name: packages.get('node_modules/' + name, {}).get('version') for name in names}
     lock = project / 'yarn.lock'
-    text = read_required(lock, 'package-lock.json (v2/v3) or yarn.lock (v1)')
+    text = read_required(lock, 'npm-shrinkwrap.json/package-lock.json (v2/v3) or yarn.lock (v1)')
     if '# yarn lockfile v1' not in text:
         raise ValueError('Unsupported yarn.lock format. Use the project package manager; this check supports npm v2/v3 or Yarn v1 locks.')
     versions = {}
@@ -233,8 +236,8 @@ def locked_web_versions(project, names):
             match = re.fullmatch(r'  version "([^"]+)"', line)
             if not match:
                 raise ValueError('Malformed version in yarn.lock.')
-            for name in names:
-                if any(s.startswith(name + '@') for s in selectors):
+            for name, baseline in names.items():
+                if f'{name}@{baseline["version"]}' in selectors:
                     if name in versions and versions[name] != match[1]:
                         raise ValueError(f'Conflicting lock versions for {name}. Resolve dependency context explicitly.')
                     versions[name] = match[1]
@@ -267,11 +270,11 @@ def check_consumer(project, data, profile, docs_version, docs_channel, agent='co
                 versions[name[1]] = version[1]
         if not {'miden-protocol', 'miden-core'} <= versions.keys() or not {'miden', 'miden-client'} & versions.keys():
             raise ValueError('Cargo.lock lacks a complete Miden guest/host, protocol and VM tuple. Generate it with the project package manager.')
-        toolchain = read_required(project / 'miden-toolchain.toml', 'miden-toolchain.toml')
-        channel = re.search(r'^channel\s*=\s*"([^"]+)"', toolchain, re.M)
-        if not channel or channel[1] != release['toolchain']:
+        toolchain = tomllib.loads(read_required(project / 'miden-toolchain.toml', 'miden-toolchain.toml')).get('toolchain', {})
+        channel = toolchain.get('channel') if isinstance(toolchain, dict) else None
+        if channel != release['toolchain']:
             raise ValueError(f'Miden toolchain channel mismatch; expected {release["toolchain"]}. Inspect the project pin before building.')
-        result.update(packages=versions, toolchain=channel[1], compiler_execution_verified=False)
+        result.update(packages=versions, toolchain=channel, compiler_execution_verified=False)
         return result
     manifest = json.loads(read_required(project / 'package.json', 'package.json'))
     names = release['web_packages']
@@ -280,6 +283,7 @@ def check_consumer(project, data, profile, docs_version, docs_channel, agent='co
     agents = read_required(project / 'AGENTS.md', 'AGENTS.md context')
     claude = read_required(project / 'CLAUDE.md', 'CLAUDE.md context import') if agent == 'claude' else ''
     packages = {}
+    guide_pointers = []
     for name, baseline in names.items():
         directory = project / 'node_modules' / name
         installed = json.loads(read_required(directory / 'package.json', name + ' installed package'))
@@ -308,9 +312,11 @@ def check_consumer(project, data, profile, docs_version, docs_channel, agent='co
                     raise ValueError(f'Synced context mismatch: {target}. Run the reviewed prepare hook and verify its output, not only its exit code.')
         if has_skills and f'node_modules/{name}/AGENTS.md' not in agents:
             raise ValueError(f'Missing AGENTS.md pointer for {name}. Run the reviewed initializer before relying on automatic context.')
+        if has_skills:
+            guide_pointers.append(f'node_modules/{name}/AGENTS.md')
         packages[name] = {'version': installed['version'], 'context_hashes': hashes}
-    if agent == 'claude' and '@AGENTS.md' not in claude:
-        raise ValueError('CLAUDE.md does not import @AGENTS.md. Review the initializer context change before using Claude discovery.')
+    if agent == 'claude' and '@AGENTS.md' not in claude and any(pointer not in claude for pointer in guide_pointers):
+        raise ValueError('CLAUDE.md needs @AGENTS.md or the package-guide pointers. Run the reviewed initializer before using Claude discovery.')
     prepare = manifest.get('scripts', {}).get('prepare', '')
     if not re.search(r'\bmiden-skills\s+sync\b', prepare):
         raise ValueError('Missing prepare hook: miden-skills sync. Wire the reviewed initializer into installation, then verify generated context.')

@@ -362,7 +362,7 @@ Findings are graded by severity: `[CRITICAL]` (loss of funds / key compromise), 
 
 ## Installation and verification
 
-Use Python 3.10+ from a checkout of **agent-tools**. Choose a reviewed commit
+Use Python 3.11+ from a checkout of **agent-tools**. Choose a reviewed commit
 matching your project's release and keep that checkout for repeatable checks.
 `release.json` records this knowledge bundle's v0.17 compatibility baseline; it
 is not a promise that every patch release or installed tool was tested.
@@ -468,7 +468,8 @@ React/Vite/initializer `0.17.0`. It requires exact declarations, matching instal
 versions and npm v2/v3 or Yarn v1 resolved locks. It hashes the installed guides
 and skills against the published context recorded in `release.json`, then checks
 copied skill bytes, root package-guide pointers, and the `prepare` declaration.
-For `--agent claude`, it also requires the `CLAUDE.md` import of `@AGENTS.md`.
+For `--agent claude`, it accepts either the `CLAUDE.md` import of `@AGENTS.md`
+or the initializer's package-guide pointers directly in `CLAUDE.md`.
 It preserves Web SDK ownership; only hashes are recorded here. Other package
 versions or package-manager formats require separate validation, not an automatic
 version bump or a claim that they are incompatible with Miden.
@@ -496,7 +497,7 @@ hook in a fresh temporary project, damages a copied skill, and proves the hook
 regenerates nine skills byte for byte while preserving an agent-tools skill.
 
 ```bash
-# Explicit network/child-process test; requires Node 20+, npm and Python 3.10+.
+# Explicit network/child-process test; requires Node 20+, npm and Python 3.11+.
 # PYTHON can select the Python executable.
 node --test tests/consumer-artifacts.mjs
 ```
