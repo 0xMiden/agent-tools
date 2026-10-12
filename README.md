@@ -32,7 +32,7 @@ sync, fees, and multisig migration.
 
 ## Skills
 
-Skills are applied automatically when the agent detects relevant tasks. Each skill is a `SKILL.md` file in a named directory under `skills/`.
+Skills are discoverable after installation; automatic selection depends on the agent and its configuration. Each skill is a `SKILL.md` file in a named directory under `skills/`.
 
 ### Rust SDK (Smart Contract Development)
 
@@ -86,7 +86,7 @@ API, so they are deliberately not published to npm.
 
 ## Commands
 
-Custom slash commands for Claude Code (and other AI coding agents). These provide reusable, parameterized workflows that you invoke from the chat with `/<command-name>`.
+Markdown workflow prompts for Claude Code. Invoke them with `/<command-name>` after registration, or read them as prompts in other agents. The descriptions below explain intended workflow outputs; this repository does not implement scanners, tracing services, or production dashboards. Execution depends on the agent, available tools, and project permissions.
 
 ### Available Commands
 
@@ -360,42 +360,106 @@ Findings are graded by severity: `[CRITICAL]` (loss of funds / key compromise), 
 
 ---
 
-## Installation
+## Installation and verification
 
-### Claude Code (Global)
-
-To make all commands available globally across all projects:
-
-```bash
-git clone https://github.com/0xMiden/agent-skills.git
-cp agent-skills/commands/*.md ~/.claude/commands/
-```
-
-### Claude Code (Project-Level)
-
-To make commands available only in a specific project:
+Use Python 3.10+ from a checkout of **agent-tools**. Choose a reviewed commit
+matching your project's release and keep that checkout for repeatable checks.
+`release.json` records this knowledge bundle's v0.17 compatibility baseline; it
+is not a promise that every patch release or installed tool was tested.
 
 ```bash
-git clone https://github.com/0xMiden/agent-skills.git
-mkdir -p /path/to/your/project/.claude/commands
-cp agent-skills/commands/*.md /path/to/your/project/.claude/commands/
+git clone https://github.com/0xMiden/agent-tools.git
+cd agent-tools
+# Optional: git checkout <reviewed-commit>
+python3 scripts/agent_tools.py list
+python3 scripts/agent_tools.py check
 ```
 
-### Skills (Cursor / Claude Code / Codex)
+`list` emits a deterministic JSON catalog: schema version, release versions,
+prompt names, descriptions, paths, and SHA-256 hashes of bundled files. Entries
+have `effect: "prompt"`: skills and commands are instructions the agent reads,
+not MCP tools or executable transaction APIs. `check` without a project validates
+the repository's prompt metadata; it does not run Rust, a node, or a network check.
+
+### Project installation
+
+Preview installation first. No target files or directories are created until
+`--apply` is supplied. Use an existing project directory:
 
 ```bash
-git clone https://github.com/0xMiden/agent-skills.git
-ln -sf "$(pwd)/agent-skills/skills" ~/.cursor/skills    # Cursor
-ln -sf "$(pwd)/agent-skills/skills" ~/.claude/skills     # Claude Code
-ln -sf "$(pwd)/agent-skills/skills" ~/.codex/skills      # Codex
+python3 scripts/agent_tools.py install --project /path/to/project --agent codex
+python3 scripts/agent_tools.py install --project /path/to/project --agent codex --apply
+python3 scripts/agent_tools.py check --project /path/to/project --agent codex
 ```
 
-**Note:** If `~/.cursor/skills` already exists with other skills, or you want to selectively import skills, symlink individual skills instead:
+The installer copies skills into the selected agent's project directory:
+
+| Agent | Skills directory | Discovery reference |
+|---|---|---|
+| Codex | `.agents/skills/` | [Codex local skills](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills) |
+| Claude Code | `.claude/skills/` | [Claude Code skills](https://code.claude.com/docs/en/skills) |
+| Cursor | `.cursor/skills/` | [Cursor skills](https://cursor.com/docs/skills) |
+
+It adds a compact release baseline and skill index inside a
+`miden-agent-tools` marked block in `AGENTS.md`. Content outside that block is
+preserved, including Web SDK package pointers. This index makes the knowledge
+available for agents that read `AGENTS.md`; automatic loading still depends on
+your agent and its configuration. Claude Code users can explicitly reference
+`AGENTS.md` from their existing `CLAUDE.md`; the installer does not change it.
+The selected agent and skill set replace only the marked index, not previously
+copied skills. Use the same selection when verifying it.
+
+To install only selected skills, repeat `--skill`. Claude Code command prompts
+are optional; add `--commands` for `.claude/commands/`:
 
 ```bash
-cd ~/{.cursor/.claude/.codex}/skills
-ln -sf /path/to/agent-skills/skills/masm-padding .
+python3 scripts/agent_tools.py install --project /path/to/project --agent claude \
+  --skill rust-sdk-patterns --skill rust-sdk-pitfalls --skill rust-sdk-testing-patterns \
+  --commands
+# Repeat with --apply after reviewing the JSON file plan.
 ```
+
+Other agents can read `commands/*.md` as prompts. Slash-command registration and
+`$ARGUMENTS` substitution are agent-specific; this tool does not simulate them.
+
+### Effects and recovery
+
+`list`, `check`, and installation preview read local files only. Installation
+with `--apply` writes selected prompt copies and the marked context block only.
+It does not install packages, execute commands from prompts, access credentials,
+start a node, contact RPC, submit transactions, grant permissions, or deploy.
+These boundaries describe this installer; invoking an installed prompt may ask
+an agent to perform additional actions under that agent's permissions.
+
+Existing different files, extra files inside a selected skill, malformed context
+markers, and symlink destinations are refused before writing. Existing identical
+copies are left alone. Errors go to stderr with a repair action and exit code 1;
+invalid CLI arguments exit 2; successful checks and previews exit 0.
+
+For an update collision, preserve your local copy and compare it against the
+reviewed bundle. Move only the conflicting selected skill or command aside,
+then preview and apply again. There is deliberately no force-overwrite flag.
+Do not delete whole skill directories or wallet state to repair an installation.
+Caught write failures roll back newly copied files and directories; an interrupted
+process may leave partial copies. Compare the displayed paths, preserve any local
+edits, and rerun the same selection. Keep one installer/editor writer at a time.
+
+Verify installation again after changing the checkout, copied prompts, or selected
+context. File hashes establish content identity against this checkout, not API
+compatibility or runtime success. Web/React skills remain owned by installed
+`@miden-sdk/*` packages as described above; they are not copied from this repo.
+
+### Reproducible repository tests
+
+```bash
+python3 -m unittest discover -s tests -v
+python3 scripts/agent_tools.py check
+```
+
+The tests use temporary projects and cover preview, repeat installation, all
+three agent paths, command boundaries, preservation of unrelated context/skills,
+collisions, symlinks, metadata validation, drift detection, and write recovery.
+No Miden SDK, credentials, funds, or network service is required.
 
 ## Usage
 

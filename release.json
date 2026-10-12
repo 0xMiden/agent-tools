@@ -1,0 +1,12 @@
+{
+  "miden": "0.17",
+  "toolchain": "0.17.0",
+  "contract_sdk": "0.15.0",
+  "compiler": "0.11.0",
+  "protocol": "0.17.1",
+  "rust_client": "0.17.2",
+  "vm": "0.35.0",
+  "package_format": "7.0.0",
+  "knowledge_baseline": "4c0951c",
+  "migration_source": "https://github.com/0xMiden/docs/pull/375"
+}
