@@ -1,0 +1,11 @@
+{
+  "name": "agent-tools-consumer-acceptance",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "@miden-sdk/miden-sdk": "0.17.1",
+    "@miden-sdk/react": "0.17.0",
+    "@miden-sdk/vite-plugin": "0.17.0",
+    "@miden-sdk/create": "0.17.0"
+  }
+}
