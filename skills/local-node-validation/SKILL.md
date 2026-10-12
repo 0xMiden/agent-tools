@@ -27,7 +27,7 @@ MockChain simplifies execution in ways that hide real-world failures:
 
 ## Step 1: Clean State and Start Local Node
 
-**Every node session must start from clean state.** Stale store files and keystore directories cause conflicts, deserialization errors, and misleading test results. Always wipe before starting. Serialized artifacts do not round-trip across protocol versions -- the MAST wire format is `[0, 0, 4]` and the package format is `[7, 0, 0]` -- so a fresh store is required after any version change. The helper script does `rm -rf "$DATA"` on every start for exactly this reason.
+**Use a fresh, explicitly disposable test data directory for each validation session.** Stale stores can cause conflicts, deserialization errors, and misleading test results. Preserve existing stores, exports, and keystores; do not reset a user wallet or an existing node to obtain clean test state. Confirm the resolved helper data path belongs to this test before launching it. Serialized artifacts do not round-trip across protocol versions -- the MAST wire format is `[0, 0, 4]` and the package format is `[7, 0, 0]` -- so a fresh store is required after any version change. The helper script runs `rm -rf "$DATA"` on start: inspect its version-matched source and resolved data directory before invoking it. This behavior is appropriate only for disposable test state.
 
 Rebuild contract packages with `cargo-miden` 0.11.0 / SDK 0.15.0 before loading them on v0.17.
 
@@ -191,9 +191,13 @@ Key differences from the network binary:
 
 ## Step 4: Run and Verify
 
-Ensure clean client state before running (the node should already be clean from Step 1):
+Configure the binary with fresh test-only client paths before running (use the disposable node from Step 1). The path variable below is a setup example, not an SDK or binary option; wire it into the store and keystore configuration in your own binary before invoking it:
 ```bash
-rm -rf local-keystore/ local-store.sqlite3
+# Use new test-only paths instead of deleting an existing store or keystore.
+# Configure the validation binary to use these paths before running it.
+TEST_DATA="$(mktemp -d)"
+mkdir -p "$TEST_DATA/local-keystore"
+# SQLite will create "$TEST_DATA/local-store.sqlite3" on first use.
 cargo run --bin <your-local-validation-binary> --release
 ```
 
