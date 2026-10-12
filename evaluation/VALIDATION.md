@@ -77,12 +77,25 @@ and invented-command totals are **unknown**, not zero. Exact local reports and
 logs are retained privately in the task workspace; local infrastructure paths
 are not committed here.
 
+The PR24 owner subsequently supplied real local-node report IDs `175e40a7b1b4`
+(success) and `1864273cbef3` (injected final-count failure), at head `a43051aa`.
+A private two-case integration manifest replayed those JSON reports read only,
+hashing both reports and their validator/node logs. Success asserted localhost
+node readiness, expected count 1, validator exit 0, zero reported node errors
+and stopped services. The failure asserted expected count 2, validator exit 1,
+`passed:false` and stopped services. Both expected outcomes matched. This task
+did not rerun the node or establish a changed-contract/frontend/model result.
+
 ## Remaining evaluation dependencies
 
 PR19 owns consumer validation and real published initializer/prepare acceptance.
 It is required for the bundled consumer integration until merged into main.
 PR24 owns the isolated-node validator and real template initialization evidence.
 The harness avoids editing either owner's implementation.
+Its supplied runtime interface is `MIDEN_ALLOW_LOCAL=1 bash scripts/journey.sh
+local`, with retained JSON/logs under `local-node-runs/<id>/`; the script's
+`--help` is a read-only diagnostic. Standalone installed-guide pointer repair
+is separately available in frontend-template PR32 and remains pending merge.
 
 The six agent tasks require a real configured agent adapter, independent
 scenario verifiers, prepared pinned disposable source, and complete activity

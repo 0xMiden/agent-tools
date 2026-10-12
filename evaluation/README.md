@@ -95,7 +95,11 @@ and MockChain results never establish local-node/browser gates.
 The full-stack verifier depends on the separately owned
 [agentic-template PR24](https://github.com/0xMiden/agentic-template/pull/24)
 isolated-node validator and app-specific browser assertions. Use its reviewed
-interface once available; do not invent a `validate_local` target.
+interface at `a43051aa`: `MIDEN_ALLOW_LOCAL=1 bash scripts/journey.sh local`.
+The owned runner accepts `--rpc-port`, `--health-port` and `--expected-count`
+through `scripts/local_node.py`; `--help` is read only. Runtime execution starts
+disposable local services and needs authorization for that environment. Reports
+and logs live in `local-node-runs/<id>/`. Do not invent a `validate_local` target.
 
 ## Audit commands and interventions
 
