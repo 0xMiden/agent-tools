@@ -449,6 +449,65 @@ context. File hashes establish content identity against this checkout, not API
 compatibility or runtime success. Web/React skills remain owned by installed
 `@miden-sdk/*` packages as described above; they are not copied from this repo.
 
+### Consumer release and context acceptance
+
+Repository/installation checks alone do not prove that a consumer uses this
+release. `check-consumer` reads the consumer's locks and installed context; it
+never executes its scripts or contacts the network. Declare the documentation
+release and channel explicitly:
+
+```bash
+python3 scripts/agent_tools.py check-consumer --project /path/to/frontend \
+  --profile web --agent codex --docs-version 0.17 --docs-channel stable
+python3 scripts/agent_tools.py check-consumer --project /path/to/rust-project \
+  --profile rust --docs-version 0.17 --docs-channel stable
+```
+
+The Web profile checks the **tested reference consumer**: core SDK `0.17.1`,
+React/Vite/initializer `0.17.0`. It requires exact declarations, matching installed
+versions and npm v2/v3 or Yarn v1 resolved locks. It hashes the installed guides
+and skills against the published context recorded in `release.json`, then checks
+copied skill bytes, root package-guide pointers, and the `prepare` declaration.
+For `--agent claude`, it also requires the `CLAUDE.md` import of `@AGENTS.md`.
+It preserves Web SDK ownership; only hashes are recorded here. Other package
+versions or package-manager formats require separate validation, not an automatic
+version bump or a claim that they are incompatible with Miden.
+
+The Rust profile checks matching guest/host, protocol and VM versions present
+in `Cargo.lock`, plus the project `miden-toolchain.toml` channel. It does not
+execute the compiler or verify built package format, store format or network
+compatibility. The existing Rust baseline remains unchanged.
+
+Stable `0.17` documentation is the release target. `current`/Next is unstable
+and fails this release-context check even when a page still discusses v0.17.
+The docs source commit/channel is recorded in `release.json`. Newest stable docs
+currently use the root URL; a declaration or a merged snapshot does not verify
+that a public deployment has completed. JSON therefore reports
+`docs_live_verified: false`. Use the installed package guides as the Web API
+source, rather than guessing from mutable public documentation.
+
+A matching hook declaration and correct copies cannot prove when the hook ran.
+JSON deliberately reports `hook_execution_verified: false` and
+`compiler_execution_verified: false` for the relevant read-only checks.
+The published initializer's prepare command includes `|| true`, so exit zero
+alone is insufficient. The separate acceptance test below actually downloads
+locked artifacts, runs the reviewed published initializer and consumer prepare
+hook in a fresh temporary project, damages a copied skill, and proves the hook
+regenerates nine skills byte for byte while preserving an agent-tools skill.
+
+```bash
+# Explicit network/child-process test; requires Node 20+, npm and Python 3.10+.
+# PYTHON can select the Python executable.
+node --test tests/consumer-artifacts.mjs
+```
+
+This acceptance test installs with `npm ci --ignore-scripts` and invokes only
+the published initializer and fixture-owned prepare script. It does not run
+SDK transactions or start services. It retains the printed temporary fixture
+for diagnosis; remove that specific fixture after preserving needed evidence.
+CI runs it separately from the dependency-free Python tests. The API returns
+schema-versioned success JSON; repairs remain explicit, and errors exit 1.
+
 ### Reproducible repository tests
 
 ```bash
@@ -459,7 +518,7 @@ python3 scripts/agent_tools.py check
 The tests use temporary projects and cover preview, repeat installation, all
 three agent paths, command boundaries, preservation of unrelated context/skills,
 collisions, symlinks, metadata validation, drift detection, and write recovery.
-No Miden SDK, credentials, funds, or network service is required.
+The Python tests require no Miden SDK, credentials, funds, or network service. The separate published-artifact acceptance test downloads the locked npm fixture and exercises context generation only.
 
 ## Usage
 

@@ -8,5 +8,48 @@
   "vm": "0.35.0",
   "package_format": "7.0.0",
   "knowledge_baseline": "4c0951c",
-  "migration_source": "https://github.com/0xMiden/docs/pull/375"
+  "migration_source": "https://github.com/0xMiden/docs/pull/375",
+  "docs": {
+    "version": "0.17",
+    "channel": "stable",
+    "source": "https://github.com/0xMiden/docs/pull/378",
+    "snapshot_commit": "629509d544c8d4015318ece0da20051736959a47",
+    "public_url": "https://docs.miden.xyz/",
+    "note": "Newest stable docs use the root path; current/Next is unstable. This declaration does not verify a live deployment."
+  },
+  "web_packages": {
+    "@miden-sdk/miden-sdk": {
+      "version": "0.17.1",
+      "context": {
+        "AGENTS.md": "056e5540c3b10216de48c7923ee2aa0e5ba94bd979fa7e937eba2831d11d099a",
+        "skills/chain-anchored-execution/SKILL.md": "96c458f9962806df683dadbe96d15069c0f0bed1412a4152834fd6eaecf4bd33",
+        "skills/frontend-pitfalls/SKILL.md": "b5b7eee1e23143175123e29bc0fd84b20fa0ec011377970baefd24b1fb3a097c",
+        "skills/frontend-source-guide/SKILL.md": "90d50c0ae69eba8b91b2436d6772d09826c78fd8cc58d1c53716ae4b5ebf18f6",
+        "skills/observability/SKILL.md": "56a2434bd203ce29db6e240bd64651f025c57d9912c8ce80412cc3b60a5b41c5",
+        "skills/signer-integration/SKILL.md": "7532436c9e064f4786f994b6a6a66d6a8d8000801f2b2f9bca11eff9ca00ac67",
+        "skills/web-client-usage/SKILL.md": "3f8a9e3ada80787f9dcf636f7987624911d053d5fa65b2cc68f6954ed156ce1c"
+      }
+    },
+    "@miden-sdk/react": {
+      "version": "0.17.0",
+      "context": {
+        "AGENTS.md": "857e248b9699db4f3000e8435976ca0c2d85c2513da4e92be7f8c1383b3fac0b",
+        "skills/react-sdk-patterns/SKILL.md": "f19cbc4dd5d76ac964ae70bed929b25a17e7629279fdd57afd7a942dd26dda4f",
+        "skills/testing-patterns/SKILL.md": "fed5b95672aea7d6a8b2750f58bd62c54a56b36f1d3dd297f72128fb2126fc04"
+      }
+    },
+    "@miden-sdk/vite-plugin": {
+      "version": "0.17.0",
+      "context": {
+        "AGENTS.md": "efa6b18a3a264135fe6668cffe8843ad61fa56e525a03862228e6b71e107b32a",
+        "skills/vite-wasm-setup/SKILL.md": "62ebd1effc79df2444cc21ccd54bc4dacedbd9d619508a9300fbef00447c1c5f"
+      }
+    },
+    "@miden-sdk/create": {
+      "version": "0.17.0",
+      "context": {
+        "AGENTS.md": "5e42555d0f00889d2a3f94d5f6ed36db3cb313926b86e067e90121d7ddbd755d"
+      }
+    }
+  }
 }

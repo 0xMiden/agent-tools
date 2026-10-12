@@ -24,6 +24,21 @@ def catalog():
     required = ('miden', 'toolchain', 'contract_sdk', 'compiler', 'protocol', 'rust_client', 'vm', 'package_format', 'knowledge_baseline', 'migration_source')
     if not isinstance(release, dict) or any(not isinstance(release.get(key), str) or not release[key].strip() for key in required):
         raise ValueError('Invalid release.json: required release versions and source identifiers must be nonempty strings.')
+    docs = release.get('docs')
+    if not isinstance(docs, dict) or docs.get('version') != release['miden'] or docs.get('channel') != 'stable' or not docs.get('source'):
+        raise ValueError('Invalid release.json docs: declare the matching stable release and its reviewed source.')
+    web = release.get('web_packages')
+    if not isinstance(web, dict) or not web:
+        raise ValueError('Invalid release.json web_packages: record tested published versions and context hashes.')
+    for name, package in web.items():
+        if not re.fullmatch(r'@miden-sdk/[a-z0-9-]+', name) or not isinstance(package, dict) or not re.fullmatch(r'\d+\.\d+\.\d+', str(package.get('version', ''))):
+            raise ValueError('Invalid release.json web package name/version.')
+        hashes = package.get('context')
+        if not isinstance(hashes, dict) or 'AGENTS.md' not in hashes:
+            raise ValueError(f'Invalid release.json context for {name}: AGENTS.md is required.')
+        for relative, checksum in hashes.items():
+            if Path(relative).is_absolute() or '..' in Path(relative).parts or not re.fullmatch('[0-9a-f]{64}', str(checksum)):
+                raise ValueError(f'Invalid release.json context path/hash for {name}.')
     entries = []
     for directory in sorted((ROOT / 'skills').iterdir()):
         if directory.is_symlink() or not directory.is_dir() or not (directory / 'SKILL.md').is_file():
@@ -87,6 +102,7 @@ def context(data, entries, agent):
              'MockChain success does not verify RPC, proving services, submission, or inclusion. Use local-node-validation only with explicitly disposable test state.',
              'These are knowledge prompts, not executable tools or permission grants. Inspect requested effects; protect keys and stores; report tested and untested steps separately.',
              'Web/React context belongs to installed @miden-sdk packages; do not substitute these Rust/MASM skills for their API documentation.',
+             f"Documentation target: {release['docs']['version']} {release['docs']['channel']}; current/Next is unstable. Use installed package context for Web/React APIs.",
              'Installed skill index:']
     for item in entries:
         if item['kind'] == 'skill':
@@ -192,6 +208,117 @@ def apply_plan(project, writes, operations, agents, original):
         raise
 
 
+def read_required(path, label):
+    if not path.is_file():
+        raise ValueError(f'Missing {label}: {path}. Restore the locked consumer artifacts before checking.')
+    return path.read_text()
+
+
+def locked_web_versions(project, names):
+    lock = project / 'package-lock.json'
+    if lock.is_file():
+        data = json.loads(lock.read_text())
+        packages = data.get('packages', {})
+        return {name: packages.get('node_modules/' + name, {}).get('version') for name in names}
+    lock = project / 'yarn.lock'
+    text = read_required(lock, 'package-lock.json (v2/v3) or yarn.lock (v1)')
+    if '# yarn lockfile v1' not in text:
+        raise ValueError('Unsupported yarn.lock format. Use the project package manager; this check supports npm v2/v3 or Yarn v1 locks.')
+    versions = {}
+    selectors = []
+    for line in text.splitlines():
+        if line and not line.startswith((' ', '#')) and line.endswith(':'):
+            selectors = [s.strip().strip('"') for s in line[:-1].split(', ')]
+        elif line.startswith('  version '):
+            match = re.fullmatch(r'  version "([^"]+)"', line)
+            if not match:
+                raise ValueError('Malformed version in yarn.lock.')
+            for name in names:
+                if any(s.startswith(name + '@') for s in selectors):
+                    if name in versions and versions[name] != match[1]:
+                        raise ValueError(f'Conflicting lock versions for {name}. Resolve dependency context explicitly.')
+                    versions[name] = match[1]
+    return {name: versions.get(name) for name in names}
+
+
+def check_consumer(project, data, profile, docs_version, docs_channel, agent='codex'):
+    project = Path(project).expanduser().resolve()
+    release = data['release']
+    docs = release['docs']
+    if docs_version != docs['version']:
+        raise ValueError(f'Mismatched docs version {docs_version}; this bundle targets {docs["version"]}. Select the matching release docs.')
+    if docs_channel != docs['channel']:
+        raise ValueError(f'Mismatched docs channel {docs_channel}; use stable {docs["version"]}, not current/Next unstable context.')
+    result = {'schema_version': 1, 'valid': True, 'profile': profile, 'agent': agent, 'docs': docs, 'docs_live_verified': False,
+              'scope': 'read-only consumer versions and context; no compiler, browser, RPC, or transaction execution'}
+    if profile == 'rust':
+        text = read_required(project / 'Cargo.lock', 'Cargo.lock')
+        expected = {'miden': 'contract_sdk', 'miden-sdk-build-script-support': 'contract_sdk',
+                    'miden-client': 'rust_client', 'miden-client-sqlite-store': 'rust_client',
+                    'miden-protocol': 'protocol', 'miden-standards': 'protocol', 'miden-testing': 'protocol',
+                    'miden-core': 'vm', 'miden-assembly': 'vm', 'miden-mast-package': 'vm'}
+        versions = {}
+        for block in text.split('[[package]]')[1:]:
+            name = re.search(r'^name = "([^"]+)"$', block, re.M)
+            version = re.search(r'^version = "([^"]+)"$', block, re.M)
+            if name and name[1] in expected:
+                if not version or version[1] != release[expected[name[1]]]:
+                    raise ValueError(f'Cargo version mismatch for {name[1]}; expected {release[expected[name[1]]]}. Do not auto-bump; use matching validated context.')
+                versions[name[1]] = version[1]
+        if not {'miden-protocol', 'miden-core'} <= versions.keys() or not {'miden', 'miden-client'} & versions.keys():
+            raise ValueError('Cargo.lock lacks a complete Miden guest/host, protocol and VM tuple. Generate it with the project package manager.')
+        toolchain = read_required(project / 'miden-toolchain.toml', 'miden-toolchain.toml')
+        channel = re.search(r'^channel\s*=\s*"([^"]+)"', toolchain, re.M)
+        if not channel or channel[1] != release['toolchain']:
+            raise ValueError(f'Miden toolchain channel mismatch; expected {release["toolchain"]}. Inspect the project pin before building.')
+        result.update(packages=versions, toolchain=channel[1], compiler_execution_verified=False)
+        return result
+    manifest = json.loads(read_required(project / 'package.json', 'package.json'))
+    names = release['web_packages']
+    locks = locked_web_versions(project, names)
+    declarations = {**manifest.get('dependencies', {}), **manifest.get('devDependencies', {})}
+    agents = read_required(project / 'AGENTS.md', 'AGENTS.md context')
+    claude = read_required(project / 'CLAUDE.md', 'CLAUDE.md context import') if agent == 'claude' else ''
+    packages = {}
+    for name, baseline in names.items():
+        directory = project / 'node_modules' / name
+        installed = json.loads(read_required(directory / 'package.json', name + ' installed package'))
+        if installed.get('name') != name or installed.get('version') != baseline['version']:
+            raise ValueError(f'Installed version mismatch for {name}; expected tested {baseline["version"]}. Restore the lockfile installation; no automatic patch bump.')
+        if locks[name] != baseline['version']:
+            raise ValueError(f'Lock version mismatch for {name}; expected tested {baseline["version"]}, got {locks[name]}. Install from the validated project lock.')
+        if declarations.get(name) != baseline['version']:
+            raise ValueError(f'package.json must pin tested {name}@{baseline["version"]}; got {declarations.get(name)}. Keep consumer pins and context in agreement.')
+        hashes = {}
+        has_skills = False
+        for relative, expected_hash in baseline['context'].items():
+            path = directory / relative
+            if not path.is_file():
+                raise ValueError(f'Missing context {path}. Restore the exact package artifact from the lockfile.')
+            actual = digest(path.read_bytes())
+            if actual != expected_hash:
+                raise ValueError(f'Published context mismatch: {path}. Expected the tested artifact bytes; restore before using its API guidance.')
+            hashes[relative] = actual
+            if relative.startswith('skills/'):
+                has_skills = True
+                target = project / '.claude' / relative
+                if not target.is_file():
+                    raise ValueError(f'Missing synced context {target}. Run the reviewed miden-skills initializer/prepare hook, then check again.')
+                if digest(target.read_bytes()) != actual:
+                    raise ValueError(f'Synced context mismatch: {target}. Run the reviewed prepare hook and verify its output, not only its exit code.')
+        if has_skills and f'node_modules/{name}/AGENTS.md' not in agents:
+            raise ValueError(f'Missing AGENTS.md pointer for {name}. Run the reviewed initializer before relying on automatic context.')
+        packages[name] = {'version': installed['version'], 'context_hashes': hashes}
+    if agent == 'claude' and '@AGENTS.md' not in claude:
+        raise ValueError('CLAUDE.md does not import @AGENTS.md. Review the initializer context change before using Claude discovery.')
+    prepare = manifest.get('scripts', {}).get('prepare', '')
+    if not re.search(r'\bmiden-skills\s+sync\b', prepare):
+        raise ValueError('Missing prepare hook: miden-skills sync. Wire the reviewed initializer into installation, then verify generated context.')
+    result.update(packages=packages, prepare=prepare, hook_execution_verified=False,
+                  note='Hook declaration and resulting bytes were checked. Only the opt-in published-artifact acceptance test executes the hook.')
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
@@ -204,11 +331,19 @@ def main():
         p.add_argument('--commands', action='store_true', help='Include Claude Code command prompts')
         if command == 'install':
             p.add_argument('--apply', action='store_true', help='Write the displayed plan; default is preview only')
+    consumer = sub.add_parser('check-consumer', help='Read-only check of a locked consumer and installed context')
+    consumer.add_argument('--project', required=True)
+    consumer.add_argument('--profile', choices=['web', 'rust'], required=True)
+    consumer.add_argument('--agent', choices=AGENTS, default='codex', help='Agent whose root context import is checked')
+    consumer.add_argument('--docs-version', required=True, help='Explicit documentation release, e.g. 0.17')
+    consumer.add_argument('--docs-channel', choices=['stable', 'current'], required=True)
     args = parser.parse_args()
     try:
         data = catalog()
         if args.command == 'list':
             result = data
+        elif args.command == 'check-consumer':
+            result = check_consumer(args.project, data, args.profile, args.docs_version, args.docs_channel, args.agent)
         elif args.command == 'check' and not args.project:
             result = {'valid': True, 'release': data['release'], 'entries': len(data['entries']), 'scope': 'repository prompt metadata; no runtime verification'}
         else:
