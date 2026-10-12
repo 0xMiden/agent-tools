@@ -89,7 +89,8 @@ did not rerun the node or establish a changed-contract/frontend/model result.
 ## Remaining evaluation dependencies
 
 PR19 owns consumer validation and real published initializer/prepare acceptance.
-It is required for the bundled consumer integration until merged into main.
+It is merged into main at `4d0c8e8b81bd8750aa9ad247ee00b1217bf4c4a2`; the
+bundled consumer integration can now use this checkout's shipped checker.
 PR24 owns the isolated-node validator and real template initialization evidence.
 The harness avoids editing either owner's implementation.
 Its supplied runtime interface is `MIDEN_ALLOW_LOCAL=1 bash scripts/journey.sh
@@ -103,3 +104,39 @@ audits. Full-stack verification additionally requires the reviewed PR24 node
 interface and app-specific browser evidence. No actual model benchmark, fresh
 Miden contract evaluation, full-stack browser/node evaluation, public service
 availability claim or live-docs result was produced by this task.
+
+## Reconciliation after PR19 merged
+
+Merged updated main into the existing PR20 branch without rewriting contributor
+commits. PR19's final implementation is
+`e119edbc4ec80436da20172e175078ed357abd61`. Its checker now uses `tomllib`,
+so repository documentation and the evaluation CI matrix use Python 3.11+
+(CI 3.11/3.13). The consumer manifest references the merged implementation;
+its assertions and false hook/live-docs fields remain unchanged.
+
+On the combined repository, these checks passed:
+
+- `python3 -m unittest discover -s tests -v`: **62 tests**, including all 37
+  upstream tests and 25 harness tests.
+- `python3 scripts/agent_tools.py check`: **33 prompts**, preserved release tuple.
+- `node --test tests/consumer-artifacts.mjs`: **1 published npm-artifact
+  acceptance**, executed with Node 20.20.2 and Python 3.14.6 in its disposable
+  consumer directory.
+- `python3 scripts/agent_eval.py run --suite evaluation/fixtures.json --output
+  RESULTS`: all **six** expected fixture outcomes matched.
+- `python3 scripts/agent_eval.py run --suite evaluation/consumer-integration.json
+  --output RESULTS --var agent_tools=THIS_CHECKOUT --var consumer=CONSUMER`:
+  actual merged-checker positive and wrong-channel rejection both matched.
+- `git diff origin/main --check`: clean. Diff against main contains only the
+  nine harness files; all incoming contributor files are preserved.
+
+The current checker source hash is
+`ba986085de6689f17242c805683e9a0cdbb33b6804c814c046c8449f07a8a8fc`.
+Earlier records above retain the original PR19-head attribution rather than
+presenting historical evidence as a fresh run.
+
+PR20 is ready for review. GitHub reports `mergeable:MERGEABLE` and
+`reviewDecision:REVIEW_REQUIRED`; its merge state remains `BLOCKED` pending
+review. Accessible branch-rule APIs returned no rules, and the classic
+protection endpoint returned 404, so exact configured review counts/settings
+could not be inspected. No protection was changed or bypassed; no PR was merged.

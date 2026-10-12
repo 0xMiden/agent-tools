@@ -1,7 +1,7 @@
 # Agentic developer experience evaluation
 
 Run explicit tasks and independent acceptance checks, retaining first attempts,
-retries and evidence. Python 3.10+ and the standard library are sufficient for
+retries and evidence. Python 3.11+ and the standard library are sufficient for
 the harness. The six scenarios are fresh contract, packaged SDK frontend,
 full-stack change, missing tool, version/artifact mismatch and unavailable
 service. Their task prompts and acceptance checks are in
@@ -28,10 +28,11 @@ as a supported Miden command. CI uploads fixture reports under that label.
 
 ## Run a real command integration
 
-[`consumer-integration.json`](consumer-integration.json) uses the separately
-owned [agent-tools PR19](https://github.com/0xMiden/agent-tools/pull/19)
-`check-consumer` interface at `bc8d207980aaedd42a66d7ac2cf07d911415ef25`.
-Supply a reviewed checkout containing that checker and an already initialized
+[`consumer-integration.json`](consumer-integration.json) uses the merged
+[agent-tools PR19](https://github.com/0xMiden/agent-tools/pull/19)
+`check-consumer` interface at main `4d0c8e8b81bd8750aa9ad247ee00b1217bf4c4a2`
+(PR19 final implementation `e119edbc4ec80436da20172e175078ed357abd61`).
+Supply this reviewed checkout and an already initialized
 consumer with installed locked packages and copied context:
 
 ```bash
@@ -48,8 +49,8 @@ lock and installed core guide. It preserves `hook_execution_verified:false`
 and `docs_live_verified:false` in raw verifier JSON. These checks establish
 local version/context consistency, not hook execution, frontend behavior,
 contract execution, browser interaction, live docs, or a model evaluation.
-`check-consumer` does not exist on the baseline main until PR19 lands; this
-harness does not duplicate it. PR19 owns its real published prepare acceptance.
+`check-consumer` and its published prepare acceptance now ship on main. The
+harness consumes those interfaces and preserves their execution attribution.
 
 ## Run actual agent evaluations
 

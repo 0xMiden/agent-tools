@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "published-consumer-integration",
   "mode": "integration",
-  "description": "Read-only consumer context verification using the separately owned PR19 checker. No hook, browser, contract, or model execution is implied.",
+  "description": "Read-only consumer context verification using the merged PR19 checker at main 4d0c8e8. No hook, browser, contract, or model execution is implied.",
   "source_files": [
     "{agent_tools}/scripts/agent_tools.py",
     "{agent_tools}/release.json",
@@ -34,7 +34,7 @@
             "--docs-channel",
             "stable"
           ],
-          "source": "0xMiden/agent-tools PR19, bc8d207980aaedd42a66d7ac2cf07d911415ef25: scripts/agent_tools.py check-consumer",
+          "source": "0xMiden/agent-tools main 4d0c8e8b81bd8750aa9ad247ee00b1217bf4c4a2, PR19 final e119edbc4ec80436da20172e175078ed357abd61: scripts/agent_tools.py check-consumer",
           "assertions": [
             {
               "pointer": "/valid",
